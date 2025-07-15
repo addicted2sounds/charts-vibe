@@ -1,13 +1,83 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
+
+Globals:
+  Function:
+    Environment:
+      Variables:
+        TRACKS_TABLE: !Ref TracksTable
+
 Resources:
-  MusicSearchFunction:
+  # DynamoDB Table for storing tracks
+  TracksTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: tracks
+      AttributeDefinitions:
+        - AttributeName: track_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: track_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: created-at-index
+          KeySchema:
+            - AttributeName: created_at
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput:
+            ReadCapacityUnits: 5
+            WriteCapacityUnits: 5
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  # Database service function
+  DatabaseFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: database
+      Handler: app.lambda_handler
+      Runtime: python3.11
+      Timeout: 30
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TracksTable
+      Events:
+        CreateTrack:
+          Type: Api
+          Properties:
+            Path: /tracks
+            Method: post
+        GetTrack:
+          Type: Api
+          Properties:
+            Path: /tracks/{track_id}
+            Method: get
+        GetTracks:
+          Type: Api
+          Properties:
+            Path: /tracks
+            Method: get
+        UpdateTrack:
+          Type: Api
+          Properties:
+            Path: /tracks/{track_id}
+            Method: put
+
+  YoutubeMusicSearchFunction:
     Type: AWS::Serverless::Function
     Properties:
       CodeUri: ytmusic
       Handler: app.lambda_handler
       Runtime: python3.11
       Timeout: 10
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TracksTable
 
   BeatportScraperFunction:
     Type: AWS::Serverless::Function
@@ -16,6 +86,17 @@ Resources:
       Handler: app.lambda_handler
       Runtime: python3.11
       Timeout: 30
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TracksTable
       Environment:
         Variables:
           USER_AGENT: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+
+Outputs:
+  ApiGatewayEndpoint:
+    Description: "API Gateway endpoint URL for Prod stage"
+    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
+  TracksTableName:
+    Description: "DynamoDB table name for tracks"
+    Value: !Ref TracksTable

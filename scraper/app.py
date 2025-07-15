@@ -3,6 +3,23 @@ import requests
 from bs4 import BeautifulSoup
 import re
 from urllib.parse import urljoin
+import boto3
+import os
+
+# Database integration
+def store_track_in_db(track_data):
+    """Store track data in DynamoDB"""
+    try:
+        dynamodb = boto3.resource('dynamodb')
+        table_name = os.environ.get('TRACKS_TABLE', 'tracks')
+        table = dynamodb.Table(table_name)
+
+        # Import the database module helper
+        from database.app import store_track_data
+        return store_track_data(track_data)
+    except Exception as e:
+        print(f"Error storing track in DB: {str(e)}")
+        return None
 
 def lambda_handler(event, context):
     """
@@ -49,6 +66,9 @@ def lambda_handler(event, context):
                 if track_data and track_data.get('title') and track_data.get('artist'):
                     tracks.append(track_data)
 
+                    # Store in DB
+                    store_track_in_db(track_data)
+
                 # Stop if we have 100 tracks
                 if len(tracks) >= 100:
                     break
@@ -61,11 +81,44 @@ def lambda_handler(event, context):
         if not tracks:
             tracks = extract_tracks_from_scripts(soup)
 
+        # Store tracks in database
+        stored_tracks = []
+        for track in tracks:
+            try:
+                # Prepare track data for database
+                db_track_data = {
+                    'title': track.get('title', ''),
+                    'artist': track.get('artist', ''),
+                    'album': track.get('remix', ''),  # Use remix field as album info
+                    'genre': track.get('genre', ''),
+                    'rating': None,  # Will be populated later
+                    'rank': track.get('position'),
+                    'bpm': track.get('bpm'),
+                    'key': track.get('key', ''),
+                    'label': track.get('label', ''),
+                    'release_date': track.get('release_date', ''),
+                    'beatport_url': track.get('url', ''),
+                    'source': 'beatport',
+                    'metadata': {
+                        'beatport_id': track.get('beatport_id'),
+                        'scraped_at': context.aws_request_id if context else "local"
+                    }
+                }
+
+                # Store in database
+                stored_result = store_track_in_db(db_track_data)
+                if stored_result:
+                    stored_tracks.append(stored_result)
+
+            except Exception as e:
+                print(f"Error storing track {track.get('title', 'Unknown')}: {str(e)}")
+
         return {
             "statusCode": 200,
             "body": {
                 "total_tracks": len(tracks),
                 "tracks": tracks,
+                "stored_in_db": len(stored_tracks),
                 "source": "beatport-top-100",
                 "scraped_at": context.aws_request_id if context else "local"
             }
