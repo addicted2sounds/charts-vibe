@@ -1,0 +1,21 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Transform: AWS::Serverless-2016-10-31
+Resources:
+  MusicSearchFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ytmusic
+      Handler: app.lambda_handler
+      Runtime: python3.11
+      Timeout: 10
+
+  BeatportScraperFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: scraper
+      Handler: app.lambda_handler
+      Runtime: python3.11
+      Timeout: 30
+      Environment:
+        Variables:
+          USER_AGENT: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'

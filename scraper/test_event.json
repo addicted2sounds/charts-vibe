@@ -1,0 +1,7 @@
+{
+  "source": "beatport-scraper",
+  "detail-type": "Scheduled Event",
+  "detail": {
+    "action": "scrape-top-100"
+  }
+}
