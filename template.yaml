@@ -6,6 +6,7 @@ Globals:
     Environment:
       Variables:
         TRACKS_TABLE: !Ref TracksTable
+        PLAYLISTS_TABLE: !Ref PlaylistsTable
 
 Resources:
   # DynamoDB Table for storing tracks
@@ -20,6 +21,33 @@ Resources:
           AttributeType: S
       KeySchema:
         - AttributeName: track_id
+          KeyType: HASH
+      GlobalSecondaryIndexes:
+        - IndexName: created-at-index
+          KeySchema:
+            - AttributeName: created_at
+              KeyType: HASH
+          Projection:
+            ProjectionType: ALL
+          ProvisionedThroughput:
+            ReadCapacityUnits: 5
+            WriteCapacityUnits: 5
+      ProvisionedThroughput:
+        ReadCapacityUnits: 5
+        WriteCapacityUnits: 5
+
+  # DynamoDB Table for storing playlists
+  PlaylistsTable:
+    Type: AWS::DynamoDB::Table
+    Properties:
+      TableName: playlists
+      AttributeDefinitions:
+        - AttributeName: playlist_id
+          AttributeType: S
+        - AttributeName: created_at
+          AttributeType: S
+      KeySchema:
+        - AttributeName: playlist_id
           KeyType: HASH
       GlobalSecondaryIndexes:
         - IndexName: created-at-index
@@ -92,6 +120,26 @@ Resources:
       Environment:
         Variables:
           USER_AGENT: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+
+  # YouTube Playlist Creation Function
+  YoutubePlaylistFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: ytplaylist
+      Handler: app.lambda_handler
+      Runtime: python3.11
+      Timeout: 60
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref PlaylistsTable
+        - SSMParameterReadPolicy:
+            ParameterName: /youtube/*
+      Events:
+        CreatePlaylist:
+          Type: Api
+          Properties:
+            Path: /playlists
+            Method: post
 
 Outputs:
   ApiGatewayEndpoint:
