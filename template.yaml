@@ -69,7 +69,7 @@ Resources:
     Properties:
       CodeUri: database
       Handler: app.lambda_handler
-      Runtime: python3.11
+      Runtime: python3.13
       Timeout: 30
       Policies:
         - DynamoDBCrudPolicy:
@@ -101,7 +101,7 @@ Resources:
     Properties:
       CodeUri: ytmusic
       Handler: app.lambda_handler
-      Runtime: python3.11
+      Runtime: python3.13
       Timeout: 10
       Policies:
         - DynamoDBCrudPolicy:
@@ -112,7 +112,7 @@ Resources:
     Properties:
       CodeUri: scraper
       Handler: app.lambda_handler
-      Runtime: python3.11
+      Runtime: python3.13
       Timeout: 30
       Policies:
         - DynamoDBCrudPolicy:
@@ -127,7 +127,7 @@ Resources:
     Properties:
       CodeUri: ytplaylist
       Handler: app.lambda_handler
-      Runtime: python3.11
+      Runtime: python3.13
       Timeout: 60
       Policies:
         - DynamoDBCrudPolicy:
