@@ -7,6 +7,7 @@ Globals:
       Variables:
         TRACKS_TABLE: !Ref TracksTable
         PLAYLISTS_TABLE: !Ref PlaylistsTable
+        PLAYLISTS_BUCKET: !Ref PlaylistsBucket
 
 Resources:
   # DynamoDB Table for storing tracks
@@ -63,6 +64,24 @@ Resources:
         ReadCapacityUnits: 5
         WriteCapacityUnits: 5
 
+  # S3 Bucket for storing scraped playlists
+  PlaylistsBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      BucketName: !Sub "${AWS::StackName}-playlists-${AWS::AccountId}"
+      VersioningConfiguration:
+        Status: Enabled
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      LifecycleConfiguration:
+        Rules:
+          - Id: DeleteOldVersions
+            Status: Enabled
+            NoncurrentVersionExpirationInDays: 30
+
   # Database service function
   DatabaseFunction:
     Type: AWS::Serverless::Function
@@ -117,6 +136,8 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref TracksTable
+        - S3CrudPolicy:
+            BucketName: !Ref PlaylistsBucket
       Environment:
         Variables:
           USER_AGENT: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
@@ -148,3 +169,6 @@ Outputs:
   TracksTableName:
     Description: "DynamoDB table name for tracks"
     Value: !Ref TracksTable
+  PlaylistsBucketName:
+    Description: "S3 bucket name for storing scraped playlists"
+    Value: !Ref PlaylistsBucket

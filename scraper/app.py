@@ -5,6 +5,7 @@ import re
 from urllib.parse import urljoin
 import boto3
 import os
+from datetime import datetime, timezone
 
 # Database integration
 def store_track_in_db(track_data):
@@ -19,6 +20,45 @@ def store_track_in_db(track_data):
         return store_track_data(track_data)
     except Exception as e:
         print(f"Error storing track in DB: {str(e)}")
+        return None
+
+def store_playlist_in_s3(playlist_data, playlist_id):
+    """Store playlist data in S3"""
+    try:
+        s3_client = boto3.client('s3')
+        bucket_name = os.environ.get('PLAYLISTS_BUCKET')
+        
+        if not bucket_name:
+            print("No S3 bucket configured for playlists")
+            return None
+            
+        # Generate S3 key with new format: beatport/YYYY/MM/DD/top100-HHMMSS.json
+        now = datetime.now(timezone.utc)
+        date_path = now.strftime('%Y/%m/%d')
+        time_suffix = now.strftime('%H%M%S')
+        s3_key = f"beatport/{date_path}/top100-{time_suffix}.json"
+        
+        # Upload playlist data to S3
+        s3_client.put_object(
+            Bucket=bucket_name,
+            Key=s3_key,
+            Body=json.dumps(playlist_data, indent=2, default=str),
+            ContentType='application/json',
+            Metadata={
+                'source': 'beatport-scraper',
+                'playlist-type': 'top-100',
+                'scraped-at': datetime.now(timezone.utc).isoformat()
+            }
+        )
+        
+        return {
+            'bucket': bucket_name,
+            'key': s3_key,
+            'url': f"s3://{bucket_name}/{s3_key}"
+        }
+        
+    except Exception as e:
+        print(f"Error storing playlist in S3: {str(e)}")
         return None
 
 def lambda_handler(event, context):
@@ -113,6 +153,30 @@ def lambda_handler(event, context):
             except Exception as e:
                 print(f"Error storing track {track.get('title', 'Unknown')}: {str(e)}")
 
+        # Create playlist data for S3 storage
+        now = datetime.now(timezone.utc)
+        playlist_id = f"beatport-top100-{now.strftime('%Y%m%d-%H%M%S')}"
+        playlist_data = {
+            'playlist_id': playlist_id,
+            'name': 'Beatport Top 100',
+            'description': 'Top 100 tracks scraped from Beatport',
+            'source': 'beatport',
+            'source_url': 'https://www.beatport.com/top-100',
+            'created_at': datetime.now(timezone.utc).isoformat(),
+            'track_count': len(tracks),
+            'scraped_by': context.aws_request_id if context else "local",
+            'tracks': tracks,
+            'metadata': {
+                'scraper_version': '1.0',
+                'scraped_at': datetime.now(timezone.utc).isoformat(),
+                'total_tracks_found': len(tracks),
+                'successfully_stored_in_db': len(stored_tracks)
+            }
+        }
+
+        # Store playlist in S3
+        s3_result = store_playlist_in_s3(playlist_data, playlist_id)
+
         return {
             "statusCode": 200,
             "body": {
@@ -120,7 +184,11 @@ def lambda_handler(event, context):
                 "tracks": tracks,
                 "stored_in_db": len(stored_tracks),
                 "source": "beatport-top-100",
-                "scraped_at": context.aws_request_id if context else "local"
+                "scraped_at": context.aws_request_id if context else "local",
+                "playlist": {
+                    "id": playlist_id,
+                    "s3_location": s3_result if s3_result else "Failed to store in S3"
+                }
             }
         }
 
