@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import json
+import requests
 from bs4 import BeautifulSoup
 import re
 import boto3
@@ -50,21 +51,23 @@ def lambda_handler(event, context):
     Lambda function to scrape Beatport's top-100 tracks
     """
     try:
-        # Read from local file instead of making web request
-        print("Reading from local beatport_response.html file...")
+        # Fetch the page from Beatport
+        print("Fetching Beatport top-100 page...")
 
-        try:
-            with open('beatport_response.html', 'r', encoding='utf-8') as f:
-                html_content = f.read()
-            print(f"Successfully read {len(html_content)} characters from file")
-        except FileNotFoundError:
-            return {
-                "statusCode": 500,
-                "body": "beatport_response.html file not found. Please run the scraper first to generate this file."
-            }
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate',
+            'Connection': 'keep-alive',
+        }
+
+        response = requests.get('https://www.beatport.com/top-100', headers=headers, timeout=30)
+        response.raise_for_status()
+
 
         # Parse the HTML
-        soup = BeautifulSoup(html_content, 'html.parser')
+        soup = BeautifulSoup(response.text, 'html.parser')
 
         # Find all track rows using the working approach
         track_elements = soup.find_all('div', {'data-testid': 'tracks-table-row'})
@@ -117,7 +120,7 @@ def lambda_handler(event, context):
         }
 
         # Store playlist in S3 (commented out for local testing)
-        # s3_result = store_playlist_in_s3(playlist_data, playlist_id)
+        s3_result = store_playlist_in_s3(playlist_data, playlist_id)
 
         return {
             "statusCode": 200,
@@ -128,7 +131,7 @@ def lambda_handler(event, context):
                 "scraped_at": context.aws_request_id if context else "local",
                 "playlist": {
                     "id": playlist_id,
-                    # "s3_location": s3_result if s3_result else "Failed to store in S3"
+                    "s3_location": s3_result if s3_result else "Failed to store in S3"
                 }
             }
         }
