@@ -1,2 +1,10 @@
 # Ignore AWS SAM build artifacts
 /.aws-sam/**/*
+venv/
+
+# Ignore debug and test files
+beatport_response.html
+beatport_scrape_test_*.json
+mock_playlist_*.json
+*.pyc
+__pycache__/
