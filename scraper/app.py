@@ -231,7 +231,7 @@ def extract_track_data_simple(element, position):
 
     # Look for BPM - usually just a number
     all_text = element.get_text()
-    bpm_match = re.search(r'\b(\d{2,3})\b', all_text)  # 2-3 digit numbers
+    bpm_match = re.search(r'(\d{2,3})\s*BPM', all_text, re.IGNORECASE)
     if bpm_match:
         bpm_value = int(bpm_match.group(1))
         if 80 <= bpm_value <= 200:  # Reasonable BPM range
@@ -239,7 +239,7 @@ def extract_track_data_simple(element, position):
             print(f"Found BPM: {bpm_value}")
 
     # Look for musical key - pattern like "4A", "12B", etc.
-    key_match = re.search(r'\b(\d{1,2}[A-G])\b', all_text)
+    key_match = re.search(r'([A-G](?:#|b)?\s+(?:Major|Minor))', all_text, re.IGNORECASE)
     if key_match:
         track_data["key"] = key_match.group(1)
         print(f"Found key: {track_data['key']}")
