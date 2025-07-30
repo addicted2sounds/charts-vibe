@@ -86,6 +86,13 @@ Resources:
           - Id: DeleteOldVersions
             Status: Enabled
             NoncurrentVersionExpirationInDays: 30
+
+  # S3 Notification Configuration for Chart Processor
+  PlaylistsBucketNotification:
+    Type: Custom::S3Notification
+    Properties:
+      ServiceToken: !GetAtt ChartProcessorFunction.Arn
+      BucketName: !Ref PlaylistsBucket
       NotificationConfiguration:
         LambdaConfigurations:
           - Event: s3:ObjectCreated:*
