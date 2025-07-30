@@ -13,8 +13,10 @@ Resources:
   # DynamoDB Table for storing tracks
   TracksTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
-      TableName: tracks
+      TableName: !Sub "${AWS::StackName}-tracks"
       AttributeDefinitions:
         - AttributeName: track_id
           AttributeType: S
@@ -40,8 +42,10 @@ Resources:
   # DynamoDB Table for storing playlists
   PlaylistsTable:
     Type: AWS::DynamoDB::Table
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
     Properties:
-      TableName: playlists
+      TableName: !Sub "${AWS::StackName}-playlists"
       AttributeDefinitions:
         - AttributeName: playlist_id
           AttributeType: S
