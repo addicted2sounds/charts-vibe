@@ -8,6 +8,7 @@ Globals:
         TRACKS_TABLE: !Ref TracksTable
         PLAYLISTS_TABLE: !Ref PlaylistsTable
         PLAYLISTS_BUCKET: !Ref PlaylistsBucket
+        NEW_TRACKS_TOPIC_ARN: !Ref NewTracksQueue
 
 Resources:
   # DynamoDB Table for storing tracks
@@ -85,6 +86,22 @@ Resources:
           - Id: DeleteOldVersions
             Status: Enabled
             NoncurrentVersionExpirationInDays: 30
+      NotificationConfiguration:
+        LambdaConfigurations:
+          - Event: s3:ObjectCreated:*
+            Function: !GetAtt ChartProcessorFunction.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: .json
+
+  # SNS Topic for new tracks queue
+  NewTracksQueue:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: !Sub "${AWS::StackName}-new-tracks"
+      DisplayName: "New Tracks Processing Queue"
 
   # Database service function
   DatabaseFunction:
@@ -166,6 +183,31 @@ Resources:
             Path: /playlists
             Method: post
 
+  # Chart Processor Function
+  ChartProcessorFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      CodeUri: chart-processor
+      Handler: app.lambda_handler
+      Runtime: python3.13
+      Timeout: 300
+      Policies:
+        - DynamoDBCrudPolicy:
+            TableName: !Ref TracksTable
+        - S3ReadPolicy:
+            BucketName: !Ref PlaylistsBucket
+        - SNSPublishMessagePolicy:
+            TopicName: !GetAtt NewTracksQueue.TopicName
+
+  # Lambda permission for S3 to invoke the chart processor
+  ChartProcessorS3Permission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref ChartProcessorFunction
+      Action: lambda:InvokeFunction
+      Principal: s3.amazonaws.com
+      SourceArn: !Sub "arn:aws:s3:::${PlaylistsBucket}"
+
 Outputs:
   ApiGatewayEndpoint:
     Description: "API Gateway endpoint URL for Prod stage"
@@ -176,3 +218,6 @@ Outputs:
   PlaylistsBucketName:
     Description: "S3 bucket name for storing scraped playlists"
     Value: !Ref PlaylistsBucket
+  NewTracksTopicArn:
+    Description: "SNS topic ARN for new tracks processing queue"
+    Value: !Ref NewTracksQueue

@@ -1,0 +1,5 @@
+boto3==1.34.131
+
+# Development and testing dependencies
+moto==4.2.14
+pytest==7.4.4

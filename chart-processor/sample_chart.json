@@ -1,0 +1,82 @@
+{
+  "playlist_id": "beatport-top100-20240730-120000",
+  "name": "Beatport Top 100",
+  "description": "Top 100 tracks scraped from Beatport",
+  "source": "beatport",
+  "source_url": "https://www.beatport.com/top-100",
+  "created_at": "2024-07-30T12:00:00.000Z",
+  "track_count": 5,
+  "scraped_by": "test",
+  "tracks": [
+    {
+      "title": "Verabo en NY",
+      "artist": "Toman",
+      "album": "Verabo en NY - Single",
+      "genre": "Electronic",
+      "bpm": 128,
+      "key": "Am",
+      "label": "Anjunadeep",
+      "rank": 1,
+      "beatport_id": "123456",
+      "url": "https://www.beatport.com/track/verabo-en-ny/123456",
+      "release_date": "2024-07-15"
+    },
+    {
+      "title": "Midnight City",
+      "artist": "M83",
+      "album": "Hurry Up, We're Dreaming",
+      "genre": "Electronic",
+      "bpm": 104,
+      "key": "F#m",
+      "label": "Naive Records",
+      "rank": 2,
+      "beatport_id": "789012",
+      "url": "https://www.beatport.com/track/midnight-city/789012",
+      "release_date": "2011-10-18"
+    },
+    {
+      "title": "One More Time",
+      "artist": "Daft Punk",
+      "album": "Discovery",
+      "genre": "House",
+      "bpm": 123,
+      "key": "Em",
+      "label": "Virgin Records",
+      "rank": 3,
+      "beatport_id": "345678",
+      "url": "https://www.beatport.com/track/one-more-time/345678",
+      "release_date": "2000-11-13"
+    },
+    {
+      "title": "Strobe",
+      "artist": "deadmau5",
+      "album": "For Lack of a Better Name",
+      "genre": "Progressive House",
+      "bpm": 128,
+      "key": "C#m",
+      "label": "Ultra Records",
+      "rank": 4,
+      "beatport_id": "901234",
+      "url": "https://www.beatport.com/track/strobe/901234",
+      "release_date": "2009-09-22"
+    },
+    {
+      "title": "Language",
+      "artist": "Porter Robinson",
+      "album": "Worlds",
+      "genre": "Electronic",
+      "bpm": 174,
+      "key": "G#m",
+      "label": "Astralwerks",
+      "rank": 5,
+      "beatport_id": "567890",
+      "url": "https://www.beatport.com/track/language/567890",
+      "release_date": "2014-08-12"
+    }
+  ],
+  "metadata": {
+    "scraper_version": "1.0",
+    "scraped_at": "2024-07-30T12:00:00.000Z",
+    "total_tracks_found": 5
+  }
+}
