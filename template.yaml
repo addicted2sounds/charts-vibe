@@ -1,12 +1,38 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 
+Parameters:
+  CreateTables:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: 'Set to false to use existing tables'
+
+  ExistingTracksTableName:
+    Type: String
+    Default: 'music-chart-tracks'
+    Description: 'Name of existing tracks table (if CreateTables is false)'
+
+  ExistingPlaylistsTableName:
+    Type: String
+    Default: 'music-chart-playlists'
+    Description: 'Name of existing playlists table (if CreateTables is false)'
+
+Conditions:
+  ShouldCreateTables: !Equals [!Ref CreateTables, 'true']
+
 Globals:
   Function:
     Environment:
       Variables:
-        TRACKS_TABLE: !Ref TracksTable
-        PLAYLISTS_TABLE: !Ref PlaylistsTable
+        TRACKS_TABLE: !If
+          - ShouldCreateTables
+          - !Ref TracksTable
+          - !Ref ExistingTracksTableName
+        PLAYLISTS_TABLE: !If
+          - ShouldCreateTables
+          - !Ref PlaylistsTable
+          - !Ref ExistingPlaylistsTableName
         PLAYLISTS_BUCKET: !Ref PlaylistsBucket
         NEW_TRACKS_TOPIC_ARN: !Ref NewTracksQueue
 
@@ -14,6 +40,7 @@ Resources:
   # DynamoDB Table for storing tracks
   TracksTable:
     Type: AWS::DynamoDB::Table
+    Condition: ShouldCreateTables
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
@@ -43,6 +70,7 @@ Resources:
   # DynamoDB Table for storing playlists
   PlaylistsTable:
     Type: AWS::DynamoDB::Table
+    Condition: ShouldCreateTables
     DeletionPolicy: Retain
     UpdateReplacePolicy: Retain
     Properties:
@@ -116,7 +144,9 @@ Resources:
     Properties:
       CodeUri: database
       Handler: app.lambda_handler
-      Runtime: python3.13
+      Runtime: python3.9
+      Architectures:
+        - x86_64
       Timeout: 30
       Policies:
         - DynamoDBCrudPolicy:
@@ -148,7 +178,9 @@ Resources:
     Properties:
       CodeUri: ytmusic
       Handler: app.lambda_handler
-      Runtime: python3.13
+      Runtime: python3.9
+      Architectures:
+        - x86_64
       Timeout: 10
       Policies:
         - DynamoDBCrudPolicy:
@@ -159,16 +191,22 @@ Resources:
     Properties:
       CodeUri: scraper
       Handler: app.lambda_handler
-      Runtime: python3.13
-      Timeout: 30
+      Runtime: python3.9
+      Architectures:
+        - x86_64
+      Timeout: 60
       Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref TracksTable
         - S3CrudPolicy:
             BucketName: !Ref PlaylistsBucket
       Environment:
         Variables:
           USER_AGENT: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
+      Events:
+        ScrapeTrigger:
+          Type: Api
+          Properties:
+            Path: /scrape
+            Method: get
 
   # YouTube Playlist Creation Function
   YoutubePlaylistFunction:
@@ -176,7 +214,9 @@ Resources:
     Properties:
       CodeUri: ytplaylist
       Handler: app.lambda_handler
-      Runtime: python3.13
+      Runtime: python3.9
+      Architectures:
+        - x86_64
       Timeout: 60
       Policies:
         - DynamoDBCrudPolicy:
@@ -196,7 +236,9 @@ Resources:
     Properties:
       CodeUri: chart-processor
       Handler: app.lambda_handler
-      Runtime: python3.13
+      Runtime: python3.9
+      Architectures:
+        - x86_64
       Timeout: 300
       Policies:
         - DynamoDBCrudPolicy:

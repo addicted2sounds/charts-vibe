@@ -10,17 +10,16 @@ export AWS_SECRET_ACCESS_KEY=test
 export AWS_DEFAULT_REGION=us-east-1
 
 # Build and deploy with SAM
-sam build
+sam build --use-container
 sam deploy \
-  --template-file .aws-sam/build/template.yaml \
-  --stack-name music-search-stack \
-  --capabilities CAPABILITY_IAM \
   --resolve-s3 \
-  --region us-east-1 \
-  --parameter-overrides \
-    ParameterKey=Environment,ParameterValue=local
+  --parameter-overrides ParameterKey=Environment,ParameterValue=local \
+  --no-confirm-changeset
 
 echo "Deployment complete!"
+
+# Wait a moment for services to initialize
+sleep 5
 
 # Get the API Gateway endpoint
 API_ENDPOINT=$(aws apigateway get-rest-apis --endpoint-url=http://localhost:4566 --query 'items[?name==`music-search-stack`].id' --output text)

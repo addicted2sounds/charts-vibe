@@ -7,3 +7,4 @@ s3_prefix = "music-chart"
 region = "us-east-1"
 capabilities = "CAPABILITY_IAM"
 image_repositories = []
+parameter_overrides = "CreateTables=\"true\" ExistingTracksTableName=\"music-chart-tracks\" ExistingPlaylistsTableName=\"music-chart-playlists\""
