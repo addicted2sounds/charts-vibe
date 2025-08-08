@@ -1,6 +1,7 @@
 # Ignore AWS SAM build artifacts
 /.aws-sam/**/*
 venv/
+volume/
 
 # Ignore debug and test files
 beatport_response.html

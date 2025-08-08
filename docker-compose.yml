@@ -2,23 +2,15 @@ version: '3.8'
 
 services:
   localstack:
-    container_name: music_search_localstack
+    container_name: localstack-main
     image: localstack/localstack:latest
     ports:
       - "4566:4566"            # LocalStack Gateway
       - "4510-4559:4510-4559"  # External services port range
     environment:
-      - DEBUG=1
-      - LAMBDA_EXECUTOR=docker
-      - DOCKER_HOST=unix:///var/run/docker.sock
-      - SERVICES=lambda,dynamodb,apigateway,s3,iam,sts,logs
+      - DEBUG=${DEBUG:-0}
+      - SERVICES=lambda,dynamodb,apigateway,s3,iam,sts,logs,cloudformation
+      - PERSISTENCE=1
     volumes:
+      - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack"
       - "/var/run/docker.sock:/var/run/docker.sock"
-      - "./tmp/localstack:/tmp/localstack"
-      - "./:/workspace"
-    networks:
-      - music-search-network
-
-networks:
-  music-search-network:
-    driver: bridge
