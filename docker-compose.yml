@@ -9,7 +9,7 @@ services:
       - "4510-4559:4510-4559"  # External services port range
     environment:
       - DEBUG=${DEBUG:-0}
-      - SERVICES=lambda,dynamodb,apigateway,s3,iam,sts,logs,cloudformation
+      # - SERVICES=lambda,dynamodb,apigateway,s3,iam,sqs,sns,sts,logs,cloudformation
       - PERSISTENCE=1
     volumes:
       - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack"
