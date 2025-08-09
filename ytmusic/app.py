@@ -3,7 +3,32 @@ import boto3
 import os
 import json
 import uuid
+import hashlib
+import re
 from datetime import datetime
+
+def generate_track_id(title, artist):
+    """
+    Generate a deterministic track ID based on normalized title and artist using SHA-256
+    """
+    def normalize_string(s):
+        if not s:
+            return ""
+        # Convert to lowercase, remove extra spaces, remove special chars
+        s = s.lower().strip()
+        s = re.sub(r'[^\w\s]', '', s)  # Remove special characters
+        s = re.sub(r'\s+', ' ', s)     # Normalize whitespace
+        return s
+
+    normalized_title = normalize_string(title)
+    normalized_artist = normalize_string(artist)
+
+    # Create combined string
+    combined = f"{normalized_artist}::{normalized_title}"
+
+    # Generate SHA-256 hash
+    hash_obj = hashlib.sha256(combined.encode('utf-8'))
+    return hash_obj.hexdigest()
 
 def lambda_handler(event, context):
     title = event.get("title")
@@ -41,22 +66,29 @@ def lambda_handler(event, context):
         except Exception as e:
             print(f"Error updating database: {str(e)}")
 
-    # Try to find and update existing track by title/artist
+    # Try to find and update existing track by title/artist using hash-based lookup
     try:
+        # Generate the expected track ID for this title/artist combination
+        expected_track_id = generate_track_id(title, author)
         existing_track = check_track_exists(title, author)
+
         if existing_track:
-            # Update existing track with YouTube data if it doesn't have it
+            # Track exists - update with YouTube data if it doesn't have it
             if not existing_track.get('youtube_video_id'):
-                update_track_with_youtube_data(existing_track['track_id'], youtube_data)
-                stored_track_id = existing_track['track_id']
-                print(f"Updated existing track {stored_track_id} with YouTube data")
+                success = update_track_with_youtube_data(existing_track['track_id'], youtube_data)
+                if success:
+                    stored_track_id = existing_track['track_id']
+                    print(f"Updated existing track {stored_track_id} with YouTube data")
+                else:
+                    print(f"Failed to update existing track {existing_track['track_id']}")
             else:
                 stored_track_id = existing_track['track_id']
                 print(f"Track {stored_track_id} already has YouTube data")
         else:
-            # No existing track found, create a new one
+            # No existing track found, create a new one with hash-based ID
             stored_track_id = create_new_track(youtube_data)
-            print(f"Created new track with ID: {stored_track_id}")
+            if stored_track_id:
+                print(f"Created new track with hash-based ID: {stored_track_id}")
     except Exception as e:
         print(f"Error finding/updating/creating track: {str(e)}")
 
@@ -131,14 +163,21 @@ def find_and_update_existing_track(title, artist, youtube_data):
         return 0
 
 def create_new_track(youtube_data):
-    """Create a new track record with YouTube data"""
+    """Create a new track record with YouTube data using hash-based ID"""
     try:
         dynamodb = boto3.resource('dynamodb')
         table_name = os.environ.get('TRACKS_TABLE', 'tracks')
         table = dynamodb.Table(table_name)
 
-        track_id = str(uuid.uuid4())
+        # Generate deterministic ID based on title and artist
+        track_id = generate_track_id(youtube_data['title'], youtube_data['artist'])
         timestamp = datetime.utcnow().isoformat()
+
+        # Check if track with this ID already exists
+        existing_response = table.get_item(Key={'track_id': track_id})
+        if 'Item' in existing_response:
+            print(f"Track with ID {track_id} already exists, returning existing ID")
+            return track_id
 
         item = {
             'track_id': track_id,
@@ -152,6 +191,7 @@ def create_new_track(youtube_data):
         }
 
         table.put_item(Item=item)
+        print(f"Created new track with hash-based ID: {track_id}")
         return track_id
 
     except Exception as e:
@@ -159,22 +199,22 @@ def create_new_track(youtube_data):
         return None
 
 def check_track_exists(title, artist):
-    """Check if a track already exists by title and artist"""
+    """Check if a track already exists by generating its hash-based ID and looking it up directly"""
     try:
         dynamodb = boto3.resource('dynamodb')
         table_name = os.environ.get('TRACKS_TABLE', 'tracks')
         table = dynamodb.Table(table_name)
 
-        response = table.scan(
-            FilterExpression='title = :title AND artist = :artist',
-            ExpressionAttributeValues={
-                ':title': title,
-                ':artist': artist
-            }
-        )
+        # Generate the expected track ID
+        expected_track_id = generate_track_id(title, artist)
 
-        items = response.get('Items', [])
-        return items[0] if items else None
+        # Direct lookup by ID (much more efficient than scanning)
+        response = table.get_item(Key={'track_id': expected_track_id})
+
+        if 'Item' in response:
+            return response['Item']
+        else:
+            return None
 
     except Exception as e:
         print(f"Error checking if track exists: {str(e)}")
