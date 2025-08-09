@@ -31,6 +31,78 @@ def generate_track_id(title, artist):
     return hash_obj.hexdigest()
 
 def lambda_handler(event, context):
+    """
+    Handle both SQS events (from SNS) and direct API calls
+    """
+
+    # Check if this is an SQS event
+    if 'Records' in event:
+        return handle_sqs_events(event, context)
+    else:
+        # Handle direct API call
+        return handle_direct_request(event, context)
+
+def handle_sqs_events(event, context):
+    """
+    Process SQS events containing SNS messages with track data
+    """
+    results = []
+
+    for record in event['Records']:
+        try:
+            # Parse SQS message body (which contains the SNS message)
+            message_body = json.loads(record['body'])
+
+            # Extract SNS message
+            if 'Message' in message_body:
+                sns_message = json.loads(message_body['Message'])
+                track_data = sns_message.get('track', {})
+
+                if track_data:
+                    title = track_data.get('title', '').strip()
+                    artist = track_data.get('artist', '').strip()
+
+                    if title and artist:
+                        print(f"Processing track from SQS: {title} - {artist}")
+
+                        # Process the track using existing logic
+                        result = process_track_search(title, artist)
+                        results.append({
+                            'track': f"{title} - {artist}",
+                            'status': 'success' if result else 'failed',
+                            'result': result
+                        })
+                    else:
+                        print(f"Invalid track data in SQS message: missing title or artist")
+                        results.append({
+                            'track': 'unknown',
+                            'status': 'failed',
+                            'error': 'missing title or artist'
+                        })
+                else:
+                    print(f"No track data found in SNS message")
+            else:
+                print(f"Invalid SQS message format: no SNS Message found")
+
+        except Exception as e:
+            print(f"Error processing SQS record: {str(e)}")
+            results.append({
+                'status': 'error',
+                'error': str(e)
+            })
+
+    return {
+        'statusCode': 200,
+        'body': json.dumps({
+            'message': f'Processed {len(event["Records"])} SQS messages',
+            'results': results
+        })
+    }
+
+def handle_direct_request(event, context):
+    """
+    Handle direct API requests (legacy functionality)
+    """
     title = event.get("title")
     author = event.get("author")
     track_id = event.get("track_id")  # Optional track ID for updating existing record
@@ -38,68 +110,85 @@ def lambda_handler(event, context):
     if not title or not author:
         return {"statusCode": 400, "body": "Missing title or author"}
 
-    ytmusic = YTMusic()
-    results = ytmusic.search(query=f"{title} {author}", filter="songs")
+    result = process_track_search(title, author, track_id)
 
-    if not results:
+    if not result:
         return {"statusCode": 404, "body": "Track not found"}
-
-    track = results[0]
-    youtube_data = {
-        "title": track.get("title"),
-        "artist": track.get("artists")[0].get("name") if track.get("artists") else author,
-        "videoId": track.get("videoId"),
-        "url": f"https://music.youtube.com/watch?v={track.get('videoId')}"
-    }
-
-    stored_track_id = None
-
-    # Update database if track_id is provided
-    if track_id:
-        try:
-            success = update_track_with_youtube_data(track_id, youtube_data)
-            if success:
-                stored_track_id = track_id
-                print(f"Updated track {track_id} with YouTube data")
-            else:
-                print(f"Failed to update track {track_id} - may not exist")
-        except Exception as e:
-            print(f"Error updating database: {str(e)}")
-
-    # Try to find and update existing track by title/artist using hash-based lookup
-    try:
-        # Generate the expected track ID for this title/artist combination
-        expected_track_id = generate_track_id(title, author)
-        existing_track = check_track_exists(title, author)
-
-        if existing_track:
-            # Track exists - update with YouTube data if it doesn't have it
-            if not existing_track.get('youtube_video_id'):
-                success = update_track_with_youtube_data(existing_track['track_id'], youtube_data)
-                if success:
-                    stored_track_id = existing_track['track_id']
-                    print(f"Updated existing track {stored_track_id} with YouTube data")
-                else:
-                    print(f"Failed to update existing track {existing_track['track_id']}")
-            else:
-                stored_track_id = existing_track['track_id']
-                print(f"Track {stored_track_id} already has YouTube data")
-        else:
-            # No existing track found, create a new one with hash-based ID
-            stored_track_id = create_new_track(youtube_data)
-            if stored_track_id:
-                print(f"Created new track with hash-based ID: {stored_track_id}")
-    except Exception as e:
-        print(f"Error finding/updating/creating track: {str(e)}")
-
-    response_body = youtube_data.copy()
-    if stored_track_id:
-        response_body["stored_track_id"] = stored_track_id
 
     return {
         "statusCode": 200,
-        "body": response_body
+        "body": result
     }
+
+def process_track_search(title, artist, track_id=None):
+    """
+    Core logic for searching and storing track data
+    """
+    try:
+        ytmusic = YTMusic()
+        results = ytmusic.search(query=f"{title} {artist}", filter="songs")
+
+        if not results:
+            print(f"No YouTube results found for: {title} - {artist}")
+            return None
+
+        track = results[0]
+        youtube_data = {
+            "title": track.get("title"),
+            "artist": track.get("artists")[0].get("name") if track.get("artists") else artist,
+            "videoId": track.get("videoId"),
+            "url": f"https://music.youtube.com/watch?v={track.get('videoId')}"
+        }
+
+        stored_track_id = None
+
+        # Update database if track_id is provided
+        if track_id:
+            try:
+                success = update_track_with_youtube_data(track_id, youtube_data)
+                if success:
+                    stored_track_id = track_id
+                    print(f"Updated track {track_id} with YouTube data")
+                else:
+                    print(f"Failed to update track {track_id} - may not exist")
+            except Exception as e:
+                print(f"Error updating database: {str(e)}")
+
+        # Try to find and update existing track by title/artist using hash-based lookup
+        try:
+            # Generate the expected track ID for this title/artist combination
+            expected_track_id = generate_track_id(title, artist)
+            existing_track = check_track_exists(title, artist)
+
+            if existing_track:
+                # Track exists - update with YouTube data if it doesn't have it
+                if not existing_track.get('youtube_video_id'):
+                    success = update_track_with_youtube_data(existing_track['track_id'], youtube_data)
+                    if success:
+                        stored_track_id = existing_track['track_id']
+                        print(f"Updated existing track {stored_track_id} with YouTube data")
+                    else:
+                        print(f"Failed to update existing track {existing_track['track_id']}")
+                else:
+                    stored_track_id = existing_track['track_id']
+                    print(f"Track {stored_track_id} already has YouTube data")
+            else:
+                # No existing track found, create a new one with hash-based ID
+                stored_track_id = create_new_track(youtube_data)
+                if stored_track_id:
+                    print(f"Created new track with hash-based ID: {stored_track_id}")
+        except Exception as e:
+            print(f"Error finding/updating/creating track: {str(e)}")
+
+        response_body = youtube_data.copy()
+        if stored_track_id:
+            response_body["stored_track_id"] = stored_track_id
+
+        return response_body
+
+    except Exception as e:
+        print(f"Error in process_track_search: {str(e)}")
+        return None
 
 def update_track_with_youtube_data(track_id, youtube_data):
     """Update existing track with YouTube data"""

@@ -1,0 +1,58 @@
+{
+  "playlist_id": "beatport-top100-20240809-103000",
+  "name": "Beatport Top 100 - Test Chart",
+  "description": "Test chart for localstack testing",
+  "source": "beatport",
+  "source_url": "https://www.beatport.com/top-100",
+  "created_at": "2024-08-09T10:30:00.000Z",
+  "track_count": 3,
+  "scraped_by": "test-scraper",
+  "tracks": [
+    {
+      "title": "Summer Nights",
+      "artist": "Calvin Harris",
+      "album": "Summer Nights - Single",
+      "genre": "Electronic Dance",
+      "bpm": 128,
+      "key": "Fm",
+      "label": "Columbia Records",
+      "rank": 1,
+      "beatport_id": "test001",
+      "url": "https://www.beatport.com/track/summer-nights/test001",
+      "release_date": "2024-08-01"
+    },
+    {
+      "title": "Midnight Express",
+      "artist": "David Guetta",
+      "album": "Midnight Express EP",
+      "genre": "Progressive House",
+      "bpm": 126,
+      "key": "Am",
+      "label": "What A Music",
+      "rank": 2,
+      "beatport_id": "test002",
+      "url": "https://www.beatport.com/track/midnight-express/test002",
+      "release_date": "2024-07-25"
+    },
+    {
+      "title": "Electric Feel",
+      "artist": "Martin Garrix",
+      "album": "Electric Feel - Single",
+      "genre": "Big Room",
+      "bpm": 130,
+      "key": "G#m",
+      "label": "STMPD RCRDS",
+      "rank": 3,
+      "beatport_id": "test003",
+      "url": "https://www.beatport.com/track/electric-feel/test003",
+      "release_date": "2024-08-05"
+    }
+  ],
+  "metadata": {
+    "scraper_version": "1.2.0",
+    "scraped_at": "2024-08-09T10:30:00.000Z",
+    "total_tracks_found": 3,
+    "chart_type": "top100",
+    "test_mode": true
+  }
+}
