@@ -6,6 +6,7 @@ import re
 import boto3
 import os
 from datetime import datetime, timezone
+from utils import generate_track_id
 
 def store_playlist_in_s3(playlist_data, playlist_id):
     """Store playlist data in S3"""
@@ -243,6 +244,11 @@ def extract_track_data_simple(element, position):
     if key_match:
         track_data["key"] = key_match.group(1)
         print(f"Found key: {track_data['key']}")
+
+    # Generate track ID if we have title and artist
+    if track_data.get('title') and track_data.get('artist'):
+        track_data["track_id"] = generate_track_id(track_data['title'], track_data['artist'])
+        print(f"Generated track ID: {track_data['track_id']}")
 
     return track_data
 
