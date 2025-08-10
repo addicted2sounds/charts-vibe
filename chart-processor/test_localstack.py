@@ -85,6 +85,91 @@ def setup_localstack_resources():
 
     return True, topic_arn
 
+def deploy_lambda_function():
+    """Deploy the chart processor Lambda function to LocalStack"""
+
+    print("🚀 Deploying Lambda function to LocalStack...")
+
+    endpoint_url = 'http://localhost:4566'
+    lambda_client = boto3.client('lambda', endpoint_url=endpoint_url, region_name='us-east-1')
+    iam_client = boto3.client('iam', endpoint_url=endpoint_url, region_name='us-east-1')
+
+    try:
+        # Create IAM role for Lambda
+        role_name = 'lambda-execution-role'
+        assume_role_policy = {
+            "Version": "2012-10-17",
+            "Statement": [
+                {
+                    "Effect": "Allow",
+                    "Principal": {"Service": "lambda.amazonaws.com"},
+                    "Action": "sts:AssumeRole"
+                }
+            ]
+        }
+
+        try:
+            iam_client.create_role(
+                RoleName=role_name,
+                AssumeRolePolicyDocument=json.dumps(assume_role_policy)
+            )
+            print(f"✅ Created IAM role: {role_name}")
+        except iam_client.exceptions.EntityAlreadyExistsException:
+            print(f"✅ IAM role already exists: {role_name}")
+
+        role_arn = f"arn:aws:iam::000000000000:role/{role_name}"
+
+        # Check if Lambda package exists
+        if not os.path.exists('chart-processor.zip'):
+            print("📦 Creating Lambda package...")
+            os.system('./package-lambda.sh > /dev/null 2>&1')
+
+        # Read Lambda package
+        with open('chart-processor.zip', 'rb') as f:
+            zip_content = f.read()
+
+        # Deploy Lambda function
+        function_name = 'chart-processor'
+        try:
+            response = lambda_client.create_function(
+                FunctionName=function_name,
+                Runtime='python3.9',
+                Role=role_arn,
+                Handler='app.lambda_handler',
+                Code={'ZipFile': zip_content},
+                Environment={
+                    'Variables': {
+                        'TRACKS_TABLE': 'tracks',
+                        'NEW_TRACKS_TOPIC_ARN': 'arn:aws:sns:us-east-1:000000000000:new-tracks'
+                    }
+                },
+                Timeout=30
+            )
+            print(f"✅ Deployed Lambda function: {function_name}")
+            print(f"   Function ARN: {response['FunctionArn']}")
+            return True
+        except lambda_client.exceptions.ResourceConflictException:
+            # Function exists, update it
+            lambda_client.update_function_code(
+                FunctionName=function_name,
+                ZipFile=zip_content
+            )
+            lambda_client.update_function_configuration(
+                FunctionName=function_name,
+                Environment={
+                    'Variables': {
+                        'TRACKS_TABLE': 'tracks',
+                        'NEW_TRACKS_TOPIC_ARN': 'arn:aws:sns:us-east-1:000000000000:new-tracks'
+                    }
+                }
+            )
+            print(f"✅ Updated existing Lambda function: {function_name}")
+            return True
+
+    except Exception as e:
+        print(f"❌ Error deploying Lambda function: {e}")
+        return False
+
 def test_chart_processor_locally():
     """Test the chart processor function locally (without Lambda)"""
 
@@ -170,6 +255,13 @@ def main():
     if not success:
         return
 
+    # Deploy Lambda function
+    print("\n" + "=" * 40)
+    deploy_success = deploy_lambda_function()
+    if not deploy_success:
+        print("❌ Failed to deploy Lambda function")
+        print("   Will skip Lambda invocation test")
+
     # Test locally first
     print("\n" + "=" * 40)
     local_success = test_chart_processor_locally()
@@ -179,16 +271,16 @@ def main():
     else:
         print("❌ Local test failed!")
 
-    # Try Lambda invocation (optional)
+    # Try Lambda invocation
     print("\n" + "=" * 40)
-    try_lambda = input("Do you want to try invoking the Lambda function on LocalStack? (y/n): ")
-
-    if try_lambda.lower() == 'y':
+    if deploy_success:
         lambda_success = invoke_lambda_on_localstack()
         if lambda_success:
             print("✅ Lambda invocation successful!")
         else:
             print("❌ Lambda invocation failed!")
+    else:
+        print("⏭️  Skipping Lambda invocation (deployment failed)")
 
     print("\n🎉 Test completed!")
     print("\nNext steps:")
@@ -196,6 +288,8 @@ def main():
     print("2. Verify DynamoDB tracks table for any existing tracks")
     print("3. Check SNS topic for published messages")
     print(f"4. S3 bucket 'charts-bucket' contains test data")
+    if deploy_success:
+        print("5. Lambda function 'chart-processor' is deployed and ready")
 
 if __name__ == "__main__":
     main()

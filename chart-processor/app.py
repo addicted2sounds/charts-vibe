@@ -5,6 +5,9 @@ import uuid
 from datetime import datetime
 from urllib.parse import unquote_plus
 
+# Import local utilities (bundled with Lambda function)
+from utils import generate_track_id, normalize_track_data, check_track_exists_by_id
+
 def lambda_handler(event, context):
     """
     Lambda function triggered by S3 ObjectCreated events in the charts bucket.
@@ -111,7 +114,7 @@ def extract_tracks_from_chart(chart_data):
             # Chart data is directly a list of tracks
             tracks = chart_data
 
-        # Normalize track data structure
+        # Normalize track data structure using common utilities
         normalized_tracks = []
         for track in tracks:
             normalized_track = normalize_track_data(track)
@@ -124,53 +127,8 @@ def extract_tracks_from_chart(chart_data):
         print(f"Error extracting tracks from chart: {str(e)}")
         return []
 
-def normalize_track_data(track):
-    """Normalize track data to a consistent format"""
-    try:
-        normalized = {}
-
-        # Handle different track data structures
-        if isinstance(track, dict):
-            # Extract title
-            title = track.get('title') or track.get('track') or track.get('name')
-            if not title:
-                return None
-            normalized['title'] = str(title).strip()
-
-            # Extract artist
-            artist = track.get('artist') or track.get('artists')
-            if isinstance(artist, list):
-                artist = ', '.join([str(a) for a in artist])
-            if not artist:
-                return None
-            normalized['artist'] = str(artist).strip()
-
-            # Extract optional fields
-            normalized['album'] = track.get('album', '')
-            normalized['genre'] = track.get('genre', '')
-            normalized['label'] = track.get('label', '')
-            normalized['bpm'] = track.get('bpm')
-            normalized['key'] = track.get('key', '')
-            normalized['rank'] = track.get('rank') or track.get('position')
-            normalized['rating'] = track.get('rating')
-            normalized['release_date'] = track.get('release_date') or track.get('released')
-            normalized['beatport_url'] = track.get('beatport_url') or track.get('url')
-            normalized['beatport_id'] = track.get('beatport_id') or track.get('id')
-
-            # Store original data as metadata
-            normalized['metadata'] = {
-                'original_data': track,
-                'source': 'chart-processor'
-            }
-
-            return normalized
-
-    except Exception as e:
-        print(f"Error normalizing track data: {str(e)}")
-        return None
-
 def filter_new_tracks(tracks):
-    """Filter out tracks that already exist in the tracks table"""
+    """Filter out tracks that already exist in the tracks table using hash-based ID lookup"""
     try:
         dynamodb = boto3.resource('dynamodb')
         table_name = os.environ.get('TRACKS_TABLE', 'tracks')
@@ -179,32 +137,31 @@ def filter_new_tracks(tracks):
         new_tracks = []
 
         for track in tracks:
+            # Track should already have a track_id from normalize_track_data
+            track_id = track.get('track_id')
             title = track.get('title', '').strip()
             artist = track.get('artist', '').strip()
 
             if not title or not artist:
                 continue
 
-            # Check if track already exists in database
-            # Using scan with filter expression (consider GSI for better performance in production)
-            try:
-                response = table.scan(
-                    FilterExpression='title = :title AND artist = :artist',
-                    ExpressionAttributeValues={
-                        ':title': title,
-                        ':artist': artist
-                    },
-                    Limit=1  # We only need to know if at least one exists
-                )
+            # If track_id is missing, generate it
+            if not track_id:
+                track_id = generate_track_id(title, artist)
+                track['track_id'] = track_id
 
-                # If no items found, this is a new track
-                if not response.get('Items'):
+            # Check if track exists using direct ID lookup (much more efficient than scanning)
+            try:
+                existing_track = check_track_exists_by_id(track_id, table)
+
+                if not existing_track:
                     new_tracks.append(track)
+                    print(f"New track found: {title} - {artist} (ID: {track_id[:8]}...)")
                 else:
-                    print(f"Track already exists: {title} - {artist}")
+                    print(f"Track already exists: {title} - {artist} (ID: {track_id[:8]}...)")
 
             except Exception as e:
-                print(f"Error checking track existence: {str(e)}")
+                print(f"Error checking track existence for {title} - {artist}: {str(e)}")
                 # If there's an error checking, include the track to be safe
                 new_tracks.append(track)
 

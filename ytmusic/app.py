@@ -2,33 +2,12 @@ from ytmusicapi import YTMusic
 import boto3
 import os
 import json
+import sys
 import uuid
 import hashlib
 import re
 from datetime import datetime
-
-def generate_track_id(title, artist):
-    """
-    Generate a deterministic track ID based on normalized title and artist using SHA-256
-    """
-    def normalize_string(s):
-        if not s:
-            return ""
-        # Convert to lowercase, remove extra spaces, remove special chars
-        s = s.lower().strip()
-        s = re.sub(r'[^\w\s]', '', s)  # Remove special characters
-        s = re.sub(r'\s+', ' ', s)     # Normalize whitespace
-        return s
-
-    normalized_title = normalize_string(title)
-    normalized_artist = normalize_string(artist)
-
-    # Create combined string
-    combined = f"{normalized_artist}::{normalized_title}"
-
-    # Generate SHA-256 hash
-    hash_obj = hashlib.sha256(combined.encode('utf-8'))
-    return hash_obj.hexdigest()
+from utils import generate_track_id, check_track_exists_by_id
 
 def lambda_handler(event, context):
     """
@@ -297,13 +276,8 @@ def check_track_exists(title, artist):
         # Generate the expected track ID
         expected_track_id = generate_track_id(title, artist)
 
-        # Direct lookup by ID (much more efficient than scanning)
-        response = table.get_item(Key={'track_id': expected_track_id})
-
-        if 'Item' in response:
-            return response['Item']
-        else:
-            return None
+        # Use common utility for checking existence
+        return check_track_exists_by_id(expected_track_id, table)
 
     except Exception as e:
         print(f"Error checking if track exists: {str(e)}")
