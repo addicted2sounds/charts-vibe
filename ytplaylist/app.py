@@ -15,9 +15,17 @@ from ssm_credentials import SSMCredentialsManager
 
 def lambda_handler(event, context):
     """
-    Create a public YouTube playlist from video IDs
+    Create a public YouTube playlist from S3 playlist data with enriched video IDs from DynamoDB
 
     Expected event:
+    {
+        "s3_bucket": "charts-bucket",
+        "s3_key": "beatport/2024/07/30/top100-120000.json",
+        "playlist_name": "Optional custom name (defaults to playlist name from S3 data)",
+        "description": "Optional description"
+    }
+
+    Alternatively, the old format is still supported:
     {
         "playlist_name": "My Public Playlist",
         "video_ids": ["video_id_1", "video_id_2", "video_id_3"],
@@ -25,22 +33,121 @@ def lambda_handler(event, context):
     }
     """
     try:
-        # Parse request
-        playlist_name = event.get('playlist_name')
-        video_ids = event.get('video_ids', [])
-        description = event.get('description', f'Public playlist created on {datetime.utcnow().strftime("%Y-%m-%d %H:%M")}')
+        # Check if using new S3-based format or legacy direct video IDs format
+        s3_bucket = event.get('s3_bucket')
+        s3_key = event.get('s3_key')
 
-        if not playlist_name:
+        if s3_bucket and s3_key:
+            # New S3-based format
+            return handle_s3_playlist_creation(event, s3_bucket, s3_key)
+        else:
+            # Legacy direct video IDs format
+            return handle_direct_video_ids(event)
+
+    except Exception as e:
+        print(f"Error creating playlist: {str(e)}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps({
+                'success': False,
+                'error': f'Internal server error: {str(e)}'
+            })
+        }
+
+def handle_direct_video_ids(event):
+    """Handle the legacy direct video IDs format"""
+    # Parse request
+    playlist_name = event.get('playlist_name')
+    video_ids = event.get('video_ids', [])
+    description = event.get('description', f'Public playlist created on {datetime.utcnow().strftime("%Y-%m-%d %H:%M")}')
+
+    if not playlist_name:
+        return {
+            'statusCode': 400,
+            'body': json.dumps({'error': 'playlist_name is required'})
+        }
+
+    if not video_ids or len(video_ids) == 0:
+        return {
+            'statusCode': 400,
+            'body': json.dumps({'error': 'video_ids array is required and cannot be empty'})
+        }
+
+    # Get YouTube service
+    youtube_service = get_youtube_service()
+    if not youtube_service:
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': 'Failed to authenticate with YouTube'})
+        }
+
+    # Create public playlist
+    playlist_id = create_public_playlist(
+        youtube_service,
+        playlist_name,
+        description
+    )
+
+    if not playlist_id:
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': 'Failed to create playlist'})
+        }
+
+    # Add videos to playlist
+    added_videos, failed_videos = add_videos_to_playlist(youtube_service, playlist_id, video_ids)
+
+    # Return playlist URLs without saving anything
+    return {
+        'statusCode': 200,
+        'body': json.dumps({
+            'success': True,
+            'playlist_id': playlist_id,
+            'playlist_url': f'https://www.youtube.com/playlist?list={playlist_id}',
+            'music_url': f'https://music.youtube.com/playlist?list={playlist_id}',
+            'playlist_name': playlist_name,
+            'total_videos_requested': len(video_ids),
+            'videos_added_successfully': added_videos,
+            'failed_videos': failed_videos
+        })
+    }
+
+def handle_s3_playlist_creation(event, s3_bucket, s3_key):
+    """Handle S3-based playlist creation with DynamoDB enrichment"""
+    try:
+        # Download playlist data from S3
+        playlist_data = download_playlist_from_s3(s3_bucket, s3_key)
+        if not playlist_data:
             return {
                 'statusCode': 400,
-                'body': json.dumps({'error': 'playlist_name is required'})
+                'body': json.dumps({'error': 'Failed to download playlist data from S3'})
             }
 
-        if not video_ids or len(video_ids) == 0:
+        # Extract playlist metadata
+        playlist_name = event.get('playlist_name') or playlist_data.get('name', 'Playlist from S3')
+        description = event.get('description') or playlist_data.get('description',
+                                                f'Playlist created from {s3_key} on {datetime.utcnow().strftime("%Y-%m-%d %H:%M")}')
+
+        # Extract tracks from playlist data
+        tracks = playlist_data.get('tracks', [])
+        if not tracks:
             return {
                 'statusCode': 400,
-                'body': json.dumps({'error': 'video_ids array is required and cannot be empty'})
+                'body': json.dumps({'error': 'No tracks found in playlist data'})
             }
+
+        print(f"Found {len(tracks)} tracks in playlist: {playlist_name}")
+
+        # Get enriched track data with YouTube video IDs from DynamoDB
+        enriched_tracks, video_ids = get_enriched_tracks_from_dynamodb(tracks)
+
+        if not video_ids:
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'error': 'No tracks with YouTube video IDs found in database'})
+            }
+
+        print(f"Found {len(video_ids)} tracks with YouTube video IDs")
 
         # Get YouTube service
         youtube_service = get_youtube_service()
@@ -66,7 +173,7 @@ def lambda_handler(event, context):
         # Add videos to playlist
         added_videos, failed_videos = add_videos_to_playlist(youtube_service, playlist_id, video_ids)
 
-        # Return playlist URLs without saving anything
+        # Return detailed results
         return {
             'statusCode': 200,
             'body': json.dumps({
@@ -75,10 +182,20 @@ def lambda_handler(event, context):
                 'playlist_url': f'https://www.youtube.com/playlist?list={playlist_id}',
                 'music_url': f'https://music.youtube.com/playlist?list={playlist_id}',
                 'playlist_name': playlist_name,
-                'total_videos_requested': len(video_ids),
+                's3_source': f's3://{s3_bucket}/{s3_key}',
+                'total_tracks_in_source': len(tracks),
+                'tracks_with_video_ids': len(video_ids),
                 'videos_added_successfully': added_videos,
-                'failed_videos': failed_videos
+                'failed_videos': failed_videos,
+                'enriched_tracks': enriched_tracks  # Include enriched track data for reference
             })
+        }
+
+    except Exception as e:
+        print(f"Error handling S3 playlist creation: {str(e)}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': f'S3 playlist creation error: {str(e)}'})
         }
 
     except Exception as e:
@@ -317,18 +434,123 @@ def add_videos_to_playlist(youtube_service, playlist_id, video_ids):
 
     return added_count, failed_videos
 
+def download_playlist_from_s3(bucket_name, object_key):
+    """Download and parse playlist data from S3"""
+    try:
+        s3_client = boto3.client('s3')
+        print(f"Downloading playlist data from s3://{bucket_name}/{object_key}")
+
+        # Download the file
+        response = s3_client.get_object(Bucket=bucket_name, Key=object_key)
+        file_content = response['Body'].read().decode('utf-8')
+
+        # Parse JSON content
+        playlist_data = json.loads(file_content)
+        return playlist_data
+
+    except Exception as e:
+        print(f"Error downloading playlist from S3: {str(e)}")
+        return None
+
+def get_enriched_tracks_from_dynamodb(tracks):
+    """
+    Query DynamoDB to get enriched track data with YouTube video IDs
+
+    Args:
+        tracks: List of track data from playlist
+
+    Returns:
+        tuple: (enriched_tracks, video_ids) where enriched_tracks contains full track data
+               and video_ids is a list of YouTube video IDs for playlist creation
+    """
+    try:
+        # Add the common directory to the path to import utilities
+        sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'common'))
+        from utils import generate_track_id
+
+        # Initialize DynamoDB
+        dynamodb = boto3.resource('dynamodb')
+        table_name = os.environ.get('TRACKS_TABLE', 'tracks')
+        table = dynamodb.Table(table_name)
+
+        enriched_tracks = []
+        video_ids = []
+
+        for track in tracks:
+            try:
+                title = track.get('title', '').strip()
+                artist = track.get('artist', '').strip()
+
+                if not title or not artist:
+                    print(f"Skipping track with missing title or artist: {track}")
+                    continue
+
+                # Generate the same deterministic ID used when storing tracks
+                track_id = generate_track_id(title, artist)
+
+                # Query DynamoDB for the track
+                response = table.get_item(Key={'track_id': track_id})
+
+                if 'Item' in response:
+                    db_track = response['Item']
+                    youtube_video_id = db_track.get('youtube_video_id')
+
+                    if youtube_video_id:
+                        # Track found with YouTube video ID
+                        enriched_track = {
+                            'source_track': track,  # Original track from playlist
+                            'db_track': dict(db_track),  # Track from database (convert from DynamoDB item)
+                            'title': title,
+                            'artist': artist,
+                            'youtube_video_id': youtube_video_id,
+                            'youtube_url': db_track.get('youtube_url', f'https://www.youtube.com/watch?v={youtube_video_id}')
+                        }
+                        enriched_tracks.append(enriched_track)
+                        video_ids.append(youtube_video_id)
+                        print(f"Found YouTube video ID for: {title} - {artist} -> {youtube_video_id}")
+                    else:
+                        print(f"Track found in DB but no YouTube video ID: {title} - {artist}")
+                else:
+                    print(f"Track not found in database: {title} - {artist} (ID: {track_id[:8]}...)")
+
+            except Exception as e:
+                print(f"Error processing track {track}: {str(e)}")
+                continue
+
+        print(f"Enriched {len(enriched_tracks)} tracks with YouTube video IDs out of {len(tracks)} source tracks")
+        return enriched_tracks, video_ids
+
+    except Exception as e:
+        print(f"Error enriching tracks from DynamoDB: {str(e)}")
+        return [], []
+
 # Test function
 if __name__ == "__main__":
-    # Test with sample video IDs
-    test_event = {
-        "playlist_name": "Test Public Playlist",
+    print("Testing YouTube Playlist Lambda with both formats...")
+
+    # Test 1: Legacy format with direct video IDs
+    print("\n=== Test 1: Legacy Direct Video IDs Format ===")
+    test_event_legacy = {
+        "playlist_name": "Test Public Playlist - Legacy",
         "video_ids": [
             "dQw4w9WgXcQ",  # Rick Astley - Never Gonna Give You Up
             "kJQP7kiw5Fk",  # Luis Fonsi - Despacito
             "JGwWNGJdvx8"   # Ed Sheeran - Shape of You
         ],
-        "description": "A test playlist with popular songs"
+        "description": "A test playlist with popular songs using legacy format"
     }
 
-    result = lambda_handler(test_event, None)
-    print(json.dumps(result, indent=2))
+    result_legacy = lambda_handler(test_event_legacy, None)
+    print(json.dumps(result_legacy, indent=2))
+
+    # Test 2: New S3-based format (this will fail without actual S3 data, but shows structure)
+    print("\n=== Test 2: New S3-based Format ===")
+    test_event_s3 = {
+        "s3_bucket": "charts-bucket",
+        "s3_key": "beatport/2024/07/30/top100-120000.json",
+        "playlist_name": "Beatport Top 100 Playlist",  # Optional override
+        "description": "Top 100 tracks from Beatport chart with enriched YouTube data"
+    }
+
+    result_s3 = lambda_handler(test_event_s3, None)
+    print(json.dumps(result_s3, indent=2))

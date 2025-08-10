@@ -273,7 +273,17 @@ Resources:
       Timeout: 60
       Policies:
         - DynamoDBCrudPolicy:
-            TableName: !Ref PlaylistsTable
+            TableName: !If
+              - ShouldCreateTables
+              - !Ref PlaylistsTable
+              - !Ref ExistingPlaylistsTableName
+        - DynamoDBCrudPolicy:
+            TableName: !If
+              - ShouldCreateTables
+              - !Ref TracksTable
+              - !Ref ExistingTracksTableName
+        - S3ReadPolicy:
+            BucketName: !Ref PlaylistsBucket
         - SSMParameterReadPolicy:
             ParameterName: /youtube/*
       Events:

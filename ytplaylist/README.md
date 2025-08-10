@@ -1,60 +1,47 @@
 # YouTube Playlist Creation Lambda Function
 
-This Lambda function creates public YouTube playlists from video IDs using the YouTube Data API v3.
+🆕 **ENHANCED VERSION**: Now supports S3 playlist data with DynamoDB enrichment!
 
-## Features
+This Lambda function creates public YouTube playlists from video IDs using the YouTube Data API v3. The function has been enhanced to support both direct video IDs (legacy) and S3-based playlist data with automatic DynamoDB enrichment.
 
+## Key Features
+
+- ✅ **NEW**: Creates playlists from S3 playlist data with DynamoDB enrichment
+- ✅ **NEW**: Automatically fetches YouTube video IDs from database
+- ✅ **NEW**: Smart track matching using deterministic hash-based IDs
 - ✅ Creates public YouTube playlists
 - ✅ Adds multiple videos to playlists in order
-- ✅ Stores playlist metadata in DynamoDB
+- ✅ Backward compatible with direct video IDs
 - ✅ Secure credential management with AWS Parameter Store
-- ✅ Error handling and detailed response logging
+- ✅ Comprehensive error handling and detailed response logging
 - ✅ Works with LocalStack for testing
 
-## Setup Instructions
+## Enhanced Functionality
 
-### 1. Prerequisites
+### S3 + DynamoDB Integration
+The enhanced version can:
+1. Accept S3 bucket/key for playlist data
+2. Download playlist JSON from S3
+3. Query DynamoDB tracks table for YouTube video IDs
+4. Create playlists using enriched data from the database
+5. Return detailed results with enriched track information
 
-```bash
-# Install required Python packages
-pip install google-auth google-auth-oauthlib google-auth-httplib2 google-api-python-client boto3
+See [ENHANCED_README.md](./ENHANCED_README.md) for complete documentation of the new features.
+
+## Usage Formats
+
+### 🆕 New S3-Based Format (Recommended)
+
+```json
+{
+  "s3_bucket": "charts-bucket",
+  "s3_key": "beatport/2024/07/30/top100-120000.json",
+  "playlist_name": "Custom Playlist Name (optional)",
+  "description": "Custom description (optional)"
+}
 ```
 
-### 2. Google Cloud Setup
-
-1. Go to [Google Cloud Console](https://console.cloud.google.com/)
-2. Create a new project or select existing project
-3. Enable YouTube Data API v3
-4. Create OAuth 2.0 credentials
-5. Download the credentials as `client_secret.json`
-
-### 3. OAuth Flow Setup
-
-Run the OAuth setup script to get access tokens:
-
-```bash
-cd ytplaylist
-python oauth_setup.py
-```
-
-This will:
-- Open a browser for Google OAuth authorization
-- Store access/refresh tokens in AWS Parameter Store
-- Store client credentials securely
-
-### 4. Deploy with SAM
-
-```bash
-# For LocalStack
-./deploy-localstack.sh
-
-# For AWS
-sam build && sam deploy --guided
-```
-
-## Usage
-
-### API Request Format
+### Legacy Direct Video IDs Format (Still Supported)
 
 ```json
 {

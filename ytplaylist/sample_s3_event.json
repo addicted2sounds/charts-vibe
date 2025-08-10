@@ -1,0 +1,6 @@
+{
+  "s3_bucket": "${AWS_STACK_NAME}-playlists",
+  "s3_key": "beatport/top100/2024-08-10.json",
+  "playlist_name": "Beatport Top 100 - August 2024",
+  "description": "Top 100 electronic tracks from Beatport, automatically enriched with YouTube video IDs from our database. Created on 2024-08-10. Using global template S3 bucket reference."
+}
