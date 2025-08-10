@@ -1,12 +1,17 @@
 import json
 import boto3
 import os
+import sys
 from datetime import datetime
 import uuid
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
+
+# Add the common directory to the path to import ssm_credentials
+sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'common'))
+from ssm_credentials import SSMCredentialsManager
 
 def lambda_handler(event, context):
     """
@@ -87,17 +92,13 @@ def lambda_handler(event, context):
         }
 
 def get_youtube_service():
-    """Get authenticated YouTube service using client_secret.json file directly"""
+    """Get authenticated YouTube service using credentials from SSM Parameter Store"""
     try:
-        # Load client secrets from file
-        client_secrets = load_client_secrets()
+        # Load client secrets from SSM Parameter Store
+        client_secrets = load_client_secrets_from_ssm()
         if not client_secrets:
-            print("No client secrets found")
+            print("No client secrets found in SSM Parameter Store")
             return None
-
-        # Create YouTube service with client secrets
-        # Note: This requires OAuth flow to be completed first
-        # For now, we'll try to use stored tokens, but won't save new ones
 
         # Try to get existing tokens from environment or Parameter Store
         access_token = os.environ.get('YOUTUBE_ACCESS_TOKEN')
@@ -113,7 +114,7 @@ def get_youtube_service():
         if access_token:
             credentials = Credentials(
                 token=access_token,
-                token_uri='https://oauth2.googleapis.com/token',
+                token_uri=client_secrets['token_uri'],
                 client_id=client_secrets['client_id'],
                 client_secret=client_secrets['client_secret']
             )
@@ -154,8 +155,25 @@ def get_oauth_tokens_from_store():
         print(f"Error getting OAuth tokens: {str(e)}")
         return None
 
+def load_client_secrets_from_ssm():
+    """Load client secrets from SSM Parameter Store"""
+    try:
+        ssm_manager = SSMCredentialsManager()
+        config = ssm_manager.get_google_oauth_config()
+        return config['installed']
+    except Exception as e:
+        print(f"Error loading client secrets from SSM: {str(e)}")
+        return None
+
 def load_client_secrets():
-    """Load client secrets from client_secret.json file"""
+    """
+    DEPRECATED: Load client secrets from client_secret.json file
+    This function is kept for backward compatibility but should not be used.
+    Use load_client_secrets_from_ssm() instead.
+    """
+    print("WARNING: load_client_secrets() is deprecated. The client_secret.json file should not exist in production.")
+    print("Use SSM Parameter Store instead by calling load_client_secrets_from_ssm()")
+    
     try:
         # Get the directory of the current script
         current_dir = os.path.dirname(os.path.abspath(__file__))
