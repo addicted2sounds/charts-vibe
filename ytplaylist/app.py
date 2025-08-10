@@ -9,8 +9,6 @@ from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
-# Add the common directory to the path to import ssm_credentials
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'common'))
 from ssm_credentials import SSMCredentialsManager
 
 def lambda_handler(event, context):
@@ -465,8 +463,19 @@ def get_enriched_tracks_from_dynamodb(tracks):
     """
     try:
         # Add the common directory to the path to import utilities
-        sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'common'))
-        from utils import generate_track_id
+        common_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'common')
+        if common_path not in sys.path:
+            sys.path.append(common_path)
+
+        try:
+            from utils import generate_track_id
+        except ImportError:
+            # Fallback: try adding common path relative to current working directory
+            fallback_path = os.path.join(os.getcwd(), '..', 'common') if 'ytplaylist' in os.getcwd() else os.path.join(os.getcwd(), 'common')
+            fallback_path = os.path.abspath(fallback_path)
+            if fallback_path not in sys.path:
+                sys.path.append(fallback_path)
+            from utils import generate_track_id
 
         # Initialize DynamoDB
         dynamodb = boto3.resource('dynamodb')
