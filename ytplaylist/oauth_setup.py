@@ -10,8 +10,6 @@ import os
 import sys
 from google_auth_oauthlib.flow import InstalledAppFlow
 
-# Add the common directory to the path to import ssm_credentials
-sys.path.append(os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'common'))
 from ssm_credentials import SSMCredentialsManager
 
 # Scopes required for YouTube playlist creation
