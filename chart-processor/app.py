@@ -6,7 +6,7 @@ from datetime import datetime
 from urllib.parse import unquote_plus
 
 # Import local utilities (bundled with Lambda function)
-from utils import generate_track_id, normalize_track_data, check_track_exists_by_id
+from utils import normalize_track_data, check_track_exists_by_id
 
 def lambda_handler(event, context):
     """
@@ -137,18 +137,19 @@ def filter_new_tracks(tracks):
         new_tracks = []
 
         for track in tracks:
-            # Track should already have a track_id from normalize_track_data
+            # Track should already have a track_id from the scraper
             track_id = track.get('track_id')
             title = track.get('title', '').strip()
             artist = track.get('artist', '').strip()
 
             if not title or not artist:
+                print(f"Skipping track with missing title or artist: {track}")
                 continue
 
-            # If track_id is missing, generate it
+            # Track should already have track_id from scraper - skip if missing
             if not track_id:
-                track_id = generate_track_id(title, artist)
-                track['track_id'] = track_id
+                print(f"Warning: Track missing track_id (should come from scraper): {title} - {artist}")
+                continue
 
             # Check if track exists using direct ID lookup (much more efficient than scanning)
             try:
