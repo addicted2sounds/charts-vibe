@@ -27,7 +27,7 @@
           "arn": "arn:aws:s3:::music-chart-playlists"
         },
         "object": {
-          "key": "beatport/2025/08/09/top100-120501.json",
+          "key": "beatport/2025/08/10/top100-102756.json",
           "size": 2048,
           "eTag": "0123456789abcdef0123456789abcdef",
           "sequencer": "0A1B2C3D4E5F678901"
