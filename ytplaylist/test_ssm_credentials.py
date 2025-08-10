@@ -36,27 +36,27 @@ def test_credential_retrieval():
     try:
         manager = SSMCredentialsManager()
         config = manager.get_google_oauth_config()
-        
+
         # Verify structure
         required_keys = ['client_id', 'client_secret', 'project_id', 'auth_uri', 'token_uri', 'auth_provider_x509_cert_url', 'redirect_uris']
         installed = config.get('installed', {})
-        
+
         missing_keys = [key for key in required_keys if key not in installed]
         if missing_keys:
             print(f"❌ Missing required keys: {missing_keys}")
             return False
-            
+
         # Check that sensitive data is not empty
         if not installed.get('client_id') or not installed.get('client_secret'):
             print("❌ Client ID or Client Secret is empty")
             return False
-            
+
         print("✅ Successfully retrieved complete OAuth configuration")
         print(f"   Project ID: {installed['project_id']}")
         print(f"   Client ID: {installed['client_id'][:20]}...")
         print(f"   Redirect URIs: {installed['redirect_uris']}")
         return True
-        
+
     except Exception as e:
         print(f"❌ Failed to retrieve credentials: {e}")
         return False
@@ -65,17 +65,17 @@ def test_individual_parameters():
     """Test retrieving individual parameters"""
     try:
         manager = SSMCredentialsManager()
-        
+
         # Test non-sensitive parameter
         project_id = manager.get_parameter('project_id', decrypt=False)
         print(f"✅ Retrieved project_id: {project_id}")
-        
+
         # Test sensitive parameter
         client_id = manager.get_parameter('client_id', decrypt=True)
         print(f"✅ Retrieved client_id: {client_id[:20]}...")
-        
+
         return True
-        
+
     except Exception as e:
         print(f"❌ Failed to retrieve individual parameters: {e}")
         return False
@@ -94,31 +94,31 @@ def test_file_absence():
 def main():
     print("Testing SSM Credentials Setup")
     print("=" * 40)
-    
+
     tests = [
         ("SSM Connection", test_ssm_connection),
-        ("Credential Retrieval", test_credential_retrieval), 
+        ("Credential Retrieval", test_credential_retrieval),
         ("Individual Parameters", test_individual_parameters),
         ("File Absence", test_file_absence)
     ]
-    
+
     results = []
     for test_name, test_func in tests:
         print(f"\n🔍 Running {test_name} test...")
         result = test_func()
         results.append((test_name, result))
-    
+
     print("\n" + "=" * 40)
     print("TEST RESULTS")
     print("=" * 40)
-    
+
     all_passed = True
     for test_name, passed in results:
         status = "✅ PASS" if passed else "❌ FAIL"
         print(f"{status} - {test_name}")
         if not passed:
             all_passed = False
-    
+
     print("=" * 40)
     if all_passed:
         print("🎉 All tests passed! SSM credentials setup is working correctly.")

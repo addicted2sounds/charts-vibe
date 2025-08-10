@@ -2,6 +2,7 @@
 /.aws-sam/**/*
 venv/
 volume/
+tmp/
 
 # Ignore debug and test files
 beatport_response.html
@@ -9,3 +10,6 @@ beatport_scrape_test_*.json
 mock_playlist_*.json
 *.pyc
 __pycache__/
+
+# Google OAuth2 credentials - should be stored in SSM Parameter Store
+ytplaylist/client_secret.json

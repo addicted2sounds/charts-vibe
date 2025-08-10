@@ -69,7 +69,7 @@ def store_tokens_in_ssm(access_token, refresh_token):
     """Store OAuth tokens in SSM Parameter Store as SecureStrings"""
     try:
         ssm = boto3.client('ssm')
-        
+
         # Store access token
         ssm.put_parameter(
             Name='/youtube/access_token',
@@ -78,7 +78,7 @@ def store_tokens_in_ssm(access_token, refresh_token):
             Description='YouTube OAuth2 Access Token',
             Overwrite=True
         )
-        
+
         # Store refresh token
         if refresh_token:
             ssm.put_parameter(
@@ -88,9 +88,9 @@ def store_tokens_in_ssm(access_token, refresh_token):
                 Description='YouTube OAuth2 Refresh Token',
                 Overwrite=True
             )
-        
+
         print("✓ Tokens stored in SSM Parameter Store")
-        
+
     except Exception as e:
         print(f"✗ Error storing tokens in SSM: {str(e)}")
         print("Tokens printed above can be manually added to SSM Parameter Store")

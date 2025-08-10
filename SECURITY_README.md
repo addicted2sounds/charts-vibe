@@ -18,13 +18,13 @@ This project has been migrated to use AWS Systems Manager Parameter Store for se
    ```bash
    # Store credentials in SSM Parameter Store
    ./bin/setup-ssm-parameters.sh
-   
+
    # Test the setup
    ./ytplaylist/test_ssm_credentials.py
-   
+
    # Complete OAuth flow and store tokens
    cd ytplaylist && python3 oauth_setup.py
-   
+
    # Securely remove the file and clean git history
    ./bin/cleanup-credentials.sh
    ```
@@ -102,7 +102,7 @@ Your AWS credentials need these SSM permissions:
 ## 🚨 Security Benefits
 
 - ✅ **No secrets in git** - Credentials never stored in source code
-- ✅ **Encrypted at rest** - SSM SecureString uses KMS encryption  
+- ✅ **Encrypted at rest** - SSM SecureString uses KMS encryption
 - ✅ **Access control** - IAM controls parameter access
 - ✅ **Audit trail** - CloudTrail logs all access
 - ✅ **Easy rotation** - Update parameters without code changes
@@ -134,7 +134,7 @@ aws configure
 # macOS
 brew install jq
 
-# Ubuntu/Debian  
+# Ubuntu/Debian
 sudo apt-get install jq
 
 # CentOS/RHEL
@@ -156,7 +156,7 @@ aws ssm describe-parameters --parameter-filters "Key=Name,Option=BeginsWith,Valu
 git filter-branch --force --index-filter \
     "git rm --cached --ignore-unmatch ytplaylist/client_secret.json" \
     --prune-empty --tag-name-filter cat -- --all
-git reflog expire --expire=now --all  
+git reflog expire --expire=now --all
 git gc --prune=now --aggressive
 ```
 

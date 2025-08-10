@@ -80,7 +80,7 @@ fi
 # Step 3: Remove from git history if found
 if [ "$FOUND_IN_HISTORY" = true ]; then
     echo "🔄 Removing $CLIENT_SECRET_FILE from git history..."
-    
+
     # Check if git filter-branch or git filter-repo is available
     if command -v git-filter-repo &> /dev/null; then
         echo "Using git-filter-repo (recommended method)..."
@@ -89,12 +89,12 @@ if [ "$FOUND_IN_HISTORY" = true ]; then
         echo "Using git filter-branch (fallback method)..."
         echo "📦 For better performance, consider installing git-filter-repo:"
         echo "   pip install git-filter-repo"
-        
+
         git filter-branch --force --index-filter \
             "git rm --cached --ignore-unmatch $CLIENT_SECRET_FILE" \
             --prune-empty --tag-name-filter cat -- --all
     fi
-    
+
     echo "✅ Removed $CLIENT_SECRET_FILE from git history"
 fi
 

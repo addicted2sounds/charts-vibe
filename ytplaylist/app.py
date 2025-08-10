@@ -173,7 +173,7 @@ def load_client_secrets():
     """
     print("WARNING: load_client_secrets() is deprecated. The client_secret.json file should not exist in production.")
     print("Use SSM Parameter Store instead by calling load_client_secrets_from_ssm()")
-    
+
     try:
         # Get the directory of the current script
         current_dir = os.path.dirname(os.path.abspath(__file__))
