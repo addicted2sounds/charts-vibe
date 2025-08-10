@@ -462,21 +462,6 @@ def get_enriched_tracks_from_dynamodb(tracks):
                and video_ids is a list of YouTube video IDs for playlist creation
     """
     try:
-        # Add the common directory to the path to import utilities
-        common_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'common')
-        if common_path not in sys.path:
-            sys.path.append(common_path)
-
-        try:
-            from utils import generate_track_id
-        except ImportError:
-            # Fallback: try adding common path relative to current working directory
-            fallback_path = os.path.join(os.getcwd(), '..', 'common') if 'ytplaylist' in os.getcwd() else os.path.join(os.getcwd(), 'common')
-            fallback_path = os.path.abspath(fallback_path)
-            if fallback_path not in sys.path:
-                sys.path.append(fallback_path)
-            from utils import generate_track_id
-
         # Initialize DynamoDB
         dynamodb = boto3.resource('dynamodb')
         table_name = os.environ.get('TRACKS_TABLE', 'tracks')
@@ -489,15 +474,17 @@ def get_enriched_tracks_from_dynamodb(tracks):
             try:
                 title = track.get('title', '').strip()
                 artist = track.get('artist', '').strip()
+                track_id = track.get('track_id', '').strip()
 
                 if not title or not artist:
                     print(f"Skipping track with missing title or artist: {track}")
                     continue
 
-                # Generate the same deterministic ID used when storing tracks
-                track_id = generate_track_id(title, artist)
+                if not track_id:
+                    print(f"Skipping track with missing track_id: {title} - {artist}")
+                    continue
 
-                # Query DynamoDB for the track
+                # Query DynamoDB for the track using the track_id from playlist JSON
                 response = table.get_item(Key={'track_id': track_id})
 
                 if 'Item' in response:
@@ -511,14 +498,15 @@ def get_enriched_tracks_from_dynamodb(tracks):
                             'db_track': dict(db_track),  # Track from database (convert from DynamoDB item)
                             'title': title,
                             'artist': artist,
+                            'track_id': track_id,
                             'youtube_video_id': youtube_video_id,
                             'youtube_url': db_track.get('youtube_url', f'https://www.youtube.com/watch?v={youtube_video_id}')
                         }
                         enriched_tracks.append(enriched_track)
                         video_ids.append(youtube_video_id)
-                        print(f"Found YouTube video ID for: {title} - {artist} -> {youtube_video_id}")
+                        print(f"Found YouTube video ID for: {title} - {artist} (ID: {track_id[:8]}...) -> {youtube_video_id}")
                     else:
-                        print(f"Track found in DB but no YouTube video ID: {title} - {artist}")
+                        print(f"Track found in DB but no YouTube video ID: {title} - {artist} (ID: {track_id[:8]}...)")
                 else:
                     print(f"Track not found in database: {title} - {artist} (ID: {track_id[:8]}...)")
 
