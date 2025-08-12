@@ -44,15 +44,22 @@ def lambda_handler(event, context):
         new_tracks = filter_new_tracks(tracks)
         print(f"Found {len(new_tracks)} new tracks after filtering")
 
+        # Create job record with counters if we have new tracks to process
+        job_id = None
+        if new_tracks:
+            job_id = create_job_record(len(new_tracks), object_key)
+            print(f"Created job record: {job_id}")
+
         # Publish new tracks to SNS queue
         if new_tracks:
-            published_count = publish_tracks_to_sns(new_tracks, object_key)
+            published_count = publish_tracks_to_sns(new_tracks, object_key, job_id)
             print(f"Published {published_count} tracks to SNS")
 
         return {
             'statusCode': 200,
             'body': json.dumps({
                 'message': f'Processed chart file successfully',
+                'job_id': job_id,
                 'total_tracks': len(tracks),
                 'new_tracks': len(new_tracks),
                 'published_to_sns': len(new_tracks)
@@ -172,7 +179,7 @@ def filter_new_tracks(tracks):
         print(f"Error filtering tracks: {str(e)}")
         return tracks  # Return all tracks if filtering fails
 
-def publish_tracks_to_sns(tracks, source_file):
+def publish_tracks_to_sns(tracks, source_file, job_id=None):
     """Publish new tracks to SNS queue for further processing"""
     try:
         sns_client = boto3.client('sns')
@@ -190,6 +197,7 @@ def publish_tracks_to_sns(tracks, source_file):
                 message = {
                     'track': track,
                     'source_file': source_file,
+                    'job_id': job_id,  # Include job_id for tracking
                     'timestamp': datetime.utcnow().isoformat(),
                     'action': 'process_new_track'
                 }
@@ -203,6 +211,10 @@ def publish_tracks_to_sns(tracks, source_file):
                         'source_file': {
                             'DataType': 'String',
                             'StringValue': source_file
+                        },
+                        'job_id': {
+                            'DataType': 'String',
+                            'StringValue': job_id if job_id else 'unknown'
                         },
                         'track_title': {
                             'DataType': 'String',
@@ -226,6 +238,36 @@ def publish_tracks_to_sns(tracks, source_file):
     except Exception as e:
         print(f"Error publishing tracks to SNS: {str(e)}")
         return 0
+
+def create_job_record(expected_count, source_file):
+    """Create a new job record in the jobs table with counters"""
+    try:
+        dynamodb = boto3.resource('dynamodb')
+        table_name = os.environ.get('JOBS_TABLE', 'jobs')
+        table = dynamodb.Table(table_name)
+
+        # Generate job ID
+        job_id = str(uuid.uuid4())
+        timestamp = datetime.utcnow().isoformat()
+
+        # Create job record
+        item = {
+            'job_id': job_id,
+            'created_at': timestamp,
+            'updated_at': timestamp,
+            'source_file': source_file,
+            'expected_count': expected_count,
+            'processed_count': 0,
+            'status': 'processing'
+        }
+
+        table.put_item(Item=item)
+        print(f"Created job record: {job_id} for {expected_count} tracks from {source_file}")
+        return job_id
+
+    except Exception as e:
+        print(f"Error creating job record: {str(e)}")
+        return None
 
 if __name__ == "__main__":
     # Test with a sample S3 event

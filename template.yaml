@@ -258,9 +258,26 @@ Resources:
       Timeout: 30
       Policies:
         - DynamoDBCrudPolicy:
-            TableName: !Ref TracksTable
+            TableName: !If
+              - ShouldCreateTables
+              - !Ref TracksTable
+              - !Ref ExistingTracksTableName
+        - DynamoDBCrudPolicy:
+            TableName: !If
+              - ShouldCreateTables
+              - !Ref JobsTable
+              - !Ref ExistingJobsTableName
         - SQSPollerPolicy:
             QueueName: !GetAtt YouTubeMusicProcessingQueue.QueueName
+        - Version: '2012-10-17'
+          Statement:
+            - Effect: Allow
+              Action:
+                - events:PutEvents
+              Resource: !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/default"
+      Environment:
+        Variables:
+          EVENT_BUS_NAME: default
       Events:
         SQSEvent:
           Type: SQS
@@ -320,6 +337,11 @@ Resources:
               - ShouldCreateTables
               - !Ref TracksTable
               - !Ref ExistingTracksTableName
+        - DynamoDBCrudPolicy:
+            TableName: !If
+              - ShouldCreateTables
+              - !Ref JobsTable
+              - !Ref ExistingJobsTableName
         - S3ReadPolicy:
             BucketName: !Ref PlaylistsBucket
         - SSMParameterReadPolicy:
@@ -330,6 +352,21 @@ Resources:
           Properties:
             Path: /playlists
             Method: post
+        JobCompletedEvent:
+          Type: EventBridgeRule
+          Properties:
+            Pattern:
+              source: ["music-search.orchestrator"]
+              detail-type: ["Job Completed"]
+            DeadLetterConfig:
+              Arn: !GetAtt PlaylistProcessingDLQ.Arn
+
+  # Dead Letter Queue for playlist processing failures
+  PlaylistProcessingDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${AWS::StackName}-playlist-processing-dlq"
+      MessageRetentionPeriod: 1209600  # 14 days
 
   # Chart Processor Function
   ChartProcessorFunction:
@@ -343,7 +380,15 @@ Resources:
       Timeout: 300
       Policies:
         - DynamoDBCrudPolicy:
-            TableName: !Ref TracksTable
+            TableName: !If
+              - ShouldCreateTables
+              - !Ref TracksTable
+              - !Ref ExistingTracksTableName
+        - DynamoDBCrudPolicy:
+            TableName: !If
+              - ShouldCreateTables
+              - !Ref JobsTable
+              - !Ref ExistingJobsTableName
         - S3ReadPolicy:
             BucketName: !Ref PlaylistsBucket
         - SNSPublishMessagePolicy:
@@ -364,7 +409,10 @@ Outputs:
     Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
   TracksTableName:
     Description: "DynamoDB table name for tracks"
-    Value: !Ref TracksTable
+    Value: !If
+      - ShouldCreateTables
+      - !Ref TracksTable
+      - !Ref ExistingTracksTableName
   JobsTableName:
     Condition: ShouldCreateTables
     Description: "DynamoDB table name for jobs"
@@ -384,3 +432,9 @@ Outputs:
   YouTubeMusicProcessingDLQArn:
     Description: "SQS dead letter queue ARN for YouTube Music processing"
     Value: !GetAtt YouTubeMusicProcessingDLQ.Arn
+  PlaylistProcessingDLQArn:
+    Description: "SQS dead letter queue ARN for playlist processing failures"
+    Value: !GetAtt PlaylistProcessingDLQ.Arn
+  OrchestratorStatus:
+    Description: "Status of the simple orchestrator setup"
+    Value: "Job counter orchestrator enabled - auto playlist creation on job completion"

@@ -36,18 +36,25 @@ def handle_sqs_events(event, context):
             if 'Message' in message_body:
                 sns_message = json.loads(message_body['Message'])
                 track_data = sns_message.get('track', {})
+                job_id = sns_message.get('job_id')
 
                 if track_data:
                     title = track_data.get('title', '').strip()
                     artist = track_data.get('artist', '').strip()
 
                     if title and artist:
-                        print(f"Processing track from SQS: {title} - {artist}")
+                        print(f"Processing track from SQS: {title} - {artist} (Job: {job_id})")
 
                         # Process the track using existing logic
                         result = process_track_search(title, artist)
+                        
+                        # Update job counter if successful processing and job_id exists
+                        if result and job_id:
+                            update_job_counter(job_id)
+                        
                         results.append({
                             'track': f"{title} - {artist}",
+                            'job_id': job_id,
                             'status': 'success' if result else 'failed',
                             'result': result
                         })
@@ -55,6 +62,7 @@ def handle_sqs_events(event, context):
                         print(f"Invalid track data in SQS message: missing title or artist")
                         results.append({
                             'track': 'unknown',
+                            'job_id': job_id,
                             'status': 'failed',
                             'error': 'missing title or artist'
                         })
@@ -282,6 +290,105 @@ def check_track_exists(title, artist):
     except Exception as e:
         print(f"Error checking if track exists: {str(e)}")
         return None
+
+def update_job_counter(job_id):
+    """Update job processed_count and check if job is completed"""
+    try:
+        dynamodb = boto3.resource('dynamodb')
+        table_name = os.environ.get('JOBS_TABLE', 'jobs')
+        table = dynamodb.Table(table_name)
+        
+        # Atomically increment processed_count
+        response = table.update_item(
+            Key={'job_id': job_id},
+            UpdateExpression='SET processed_count = processed_count + :inc, updated_at = :timestamp',
+            ExpressionAttributeValues={
+                ':inc': 1,
+                ':timestamp': datetime.utcnow().isoformat()
+            },
+            ReturnValues='ALL_NEW'
+        )
+        
+        # Check if job is completed
+        updated_item = response['Attributes']
+        processed_count = updated_item.get('processed_count', 0)
+        expected_count = updated_item.get('expected_count', 0)
+        
+        print(f"Job {job_id}: processed {processed_count}/{expected_count}")
+        
+        if processed_count >= expected_count:
+            # Mark job as completed and trigger playlist creation
+            complete_job(job_id, updated_item)
+            
+    except Exception as e:
+        print(f"Error updating job counter: {str(e)}")
+
+def complete_job(job_id, job_data):
+    """Mark job as completed and trigger playlist creation event"""
+    try:
+        dynamodb = boto3.resource('dynamodb')
+        table_name = os.environ.get('JOBS_TABLE', 'jobs') 
+        table = dynamodb.Table(table_name)
+        
+        # Update job status to completed
+        table.update_item(
+            Key={'job_id': job_id},
+            UpdateExpression='SET #status = :status, completed_at = :timestamp',
+            ExpressionAttributeNames={
+                '#status': 'status'
+            },
+            ExpressionAttributeValues={
+                ':status': 'completed',
+                ':timestamp': datetime.utcnow().isoformat()
+            }
+        )
+        
+        # Send JobCompleted event to EventBridge
+        send_job_completed_event(job_id, job_data)
+        print(f"Job {job_id} marked as completed and event sent")
+        
+    except Exception as e:
+        print(f"Error completing job: {str(e)}")
+
+def send_job_completed_event(job_id, job_data):
+    """Send JobCompleted event to EventBridge to trigger playlist creation"""
+    try:
+        events_client = boto3.client('events')
+        event_bus_name = os.environ.get('EVENT_BUS_NAME', 'default')
+        
+        # Create event detail
+        detail = {
+            'job_id': job_id,
+            'source_file': job_data.get('source_file'),
+            'expected_count': job_data.get('expected_count'),
+            'processed_count': job_data.get('processed_count'),
+            'created_at': job_data.get('created_at'),
+            'completed_at': datetime.utcnow().isoformat()
+        }
+        
+        # Extract S3 info for playlist creation
+        source_file = job_data.get('source_file', '')
+        if source_file:
+            # Assuming format like "beatport/2024/07/30/top100-120000.json"
+            detail['s3_bucket'] = os.environ.get('PLAYLISTS_BUCKET')
+            detail['s3_key'] = source_file
+        
+        # Send event
+        response = events_client.put_events(
+            Entries=[
+                {
+                    'Source': 'music-search.orchestrator',
+                    'DetailType': 'Job Completed',
+                    'Detail': json.dumps(detail),
+                    'EventBusName': event_bus_name
+                }
+            ]
+        )
+        
+        print(f"Sent JobCompleted event for job {job_id}: {response}")
+        
+    except Exception as e:
+        print(f"Error sending job completed event: {str(e)}")
 
 if __name__ == "__main__":
     import json
