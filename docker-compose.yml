@@ -11,6 +11,7 @@ services:
       - DEBUG=${DEBUG:-0}
       # - SERVICES=lambda,dynamodb,apigateway,s3,iam,sqs,sns,sts,logs,cloudformation
       - PERSISTENCE=1
+      - LAMBDA_DOCKER_FLAGS='-p 19891:19891'
     volumes:
       - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack"
       - "/var/run/docker.sock:/var/run/docker.sock"
