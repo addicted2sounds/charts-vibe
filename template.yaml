@@ -41,6 +41,9 @@ Conditions:
 
 Globals:
   Function:
+    Runtime: python3.9
+    Architectures:
+      - x86_64
     Environment:
       Variables:
         TRACKS_TABLE: !If
@@ -60,6 +63,37 @@ Globals:
         YOUTUBE_MUSIC_PROCESSING_QUEUE_URL: !Ref YouTubeMusicProcessingQueue
 
 Resources:
+  # CloudWatch Log Groups with 14 days retention for cost optimization
+  DatabaseFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-DatabaseFunction"
+      RetentionInDays: 14
+
+  YoutubeMusicSearchFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-YoutubeMusicSearchFunction"
+      RetentionInDays: 14
+
+  BeatportScraperFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-BeatportScraperFunction"
+      RetentionInDays: 14
+
+  YoutubePlaylistFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-YoutubePlaylistFunction"
+      RetentionInDays: 14
+
+  ChartProcessorFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-ChartProcessorFunction"
+      RetentionInDays: 14
+
   # DynamoDB Table for storing tracks
   TracksTable:
     Type: AWS::DynamoDB::Table
@@ -202,11 +236,10 @@ Resources:
   DatabaseFunction:
     Type: AWS::Serverless::Function
     Properties:
+      FunctionName: !Sub "${AWS::StackName}-DatabaseFunction"
       CodeUri: database
       Handler: app.lambda_handler
-      Runtime: python3.9
-      Architectures:
-        - x86_64
+      Runtime: python3.11
       Timeout: 30
       Policies:
         - DynamoDBCrudPolicy:
@@ -232,15 +265,15 @@ Resources:
           Properties:
             Path: /tracks/{track_id}
             Method: put
+    DependsOn: DatabaseFunctionLogGroup
 
   YoutubeMusicSearchFunction:
     Type: AWS::Serverless::Function
     Properties:
+      FunctionName: !Sub "${AWS::StackName}-YoutubeMusicSearchFunction"
       CodeUri: ytmusic
       Handler: app.lambda_handler
-      Runtime: python3.9
-      Architectures:
-        - x86_64
+      Runtime: python3.11
       Timeout: 60
       ReservedConcurrentExecutions: 2   # стримує квоти YouTube і витрати
       Policies:
@@ -274,15 +307,15 @@ Resources:
             Queue: !GetAtt YouTubeMusicProcessingQueue.Arn
             BatchSize: 10
             MaximumBatchingWindowInSeconds: 5
+    DependsOn: YoutubeMusicSearchFunctionLogGroup
 
   BeatportScraperFunction:
     Type: AWS::Serverless::Function
     Properties:
+      FunctionName: !Sub "${AWS::StackName}-BeatportScraperFunction"
       CodeUri: scraper
       Handler: app.lambda_handler
-      Runtime: python3.9
-      Architectures:
-        - x86_64
+      Runtime: python3.11
       Timeout: 60
       Policies:
         - S3CrudPolicy:
@@ -304,16 +337,16 @@ Resources:
             Schedule: !Ref BeatportScrapeScheduleExpression
             Enabled: !If [EnableBeatportSchedule, true, false]
             Input: '{"trigger":"eventbridge","source":"beatport","frequency":"weekly"}'
+    DependsOn: BeatportScraperFunctionLogGroup
 
   # YouTube Playlist Creation Function
   YoutubePlaylistFunction:
     Type: AWS::Serverless::Function
     Properties:
+      FunctionName: !Sub "${AWS::StackName}-YoutubePlaylistFunction"
       CodeUri: ytplaylist
       Handler: app.lambda_handler
-      Runtime: python3.9
-      Architectures:
-        - x86_64
+      Runtime: python3.11
       Timeout: 60
       Policies:
         - DynamoDBCrudPolicy:
@@ -341,6 +374,7 @@ Resources:
           Properties:
             Path: /playlists
             Method: post
+    DependsOn: YoutubePlaylistFunctionLogGroup
 
   # EventBridge rule for auto-starting playlist creation after job completion
   JobCompletedRule:
@@ -373,11 +407,10 @@ Resources:
   ChartProcessorFunction:
     Type: AWS::Serverless::Function
     Properties:
+      FunctionName: !Sub "${AWS::StackName}-ChartProcessorFunction"
       CodeUri: chart-processor
       Handler: app.lambda_handler
-      Runtime: python3.9
-      Architectures:
-        - x86_64
+      Runtime: python3.11
       Timeout: 300
       Policies:
         - DynamoDBCrudPolicy:
@@ -405,6 +438,7 @@ Resources:
                 Rules:
                   - Name: suffix
                     Value: .json
+    DependsOn: ChartProcessorFunctionLogGroup
 
 
 Outputs:
