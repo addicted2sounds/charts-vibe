@@ -20,11 +20,11 @@
         "s3SchemaVersion": "1.0",
         "configurationId": "testConfigRule",
         "bucket": {
-          "name": "music-chart-playlists",
+          "name": "charts-vibe-playlists",
           "ownerIdentity": {
             "principalId": "EXAMPLE"
           },
-          "arn": "arn:aws:s3:::music-chart-playlists"
+          "arn": "arn:aws:s3:::charts-vibe-playlists"
         },
         "object": {
           "key": "beatport/2025/08/10/top100-102756.json",

@@ -1,5 +1,5 @@
 {
-    "s3_bucket": "music-chart-playlists",
+    "s3_bucket": "charts-vibe-playlists",
     "s3_key": "beatport/2025/08/10/top100-102756.json",
     "playlist_name": "Optional custom name (defaults to playlist name from S3 data)",
     "description": "Optional description"
