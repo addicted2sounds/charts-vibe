@@ -18,6 +18,11 @@ Parameters:
     Default: 'music-chart-playlists'
     Description: 'Name of existing playlists table (if CreateTables is false)'
 
+  ExistingJobsTableName:
+    Type: String
+    Default: 'music-chart-jobs'
+    Description: 'Name of existing jobs table (if CreateTables is false)'
+
   # Controls for Beatport scraper weekly schedule
   EnableBeatportScrapeSchedule:
     Type: String
@@ -46,6 +51,10 @@ Globals:
           - ShouldCreateTables
           - !Ref PlaylistsTable
           - !Ref ExistingPlaylistsTableName
+        JOBS_TABLE: !If
+          - ShouldCreateTables
+          - !Ref JobsTable
+          - !Ref ExistingJobsTableName
         PLAYLISTS_BUCKET: !Ref PlaylistsBucket
         NEW_TRACKS_TOPIC_ARN: !Ref NewTracksQueue
         YOUTUBE_MUSIC_PROCESSING_QUEUE_URL: !Ref YouTubeMusicProcessingQueue
@@ -59,6 +68,7 @@ Resources:
     UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub "${AWS::StackName}-tracks"
+      BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: track_id
           AttributeType: S
@@ -74,12 +84,6 @@ Resources:
               KeyType: HASH
           Projection:
             ProjectionType: ALL
-          ProvisionedThroughput:
-            ReadCapacityUnits: 5
-            WriteCapacityUnits: 5
-      ProvisionedThroughput:
-        ReadCapacityUnits: 5
-        WriteCapacityUnits: 5
 
   # DynamoDB Table for storing playlists
   PlaylistsTable:
@@ -89,6 +93,7 @@ Resources:
     UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub "${AWS::StackName}-playlists"
+      BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: playlist_id
           AttributeType: S
@@ -104,12 +109,24 @@ Resources:
               KeyType: HASH
           Projection:
             ProjectionType: ALL
-          ProvisionedThroughput:
-            ReadCapacityUnits: 5
-            WriteCapacityUnits: 5
-      ProvisionedThroughput:
-        ReadCapacityUnits: 5
-        WriteCapacityUnits: 5
+
+  # DynamoDB Table for tracking jobs (expected/processed counts)
+  JobsTable:
+    Type: AWS::DynamoDB::Table
+    Condition: ShouldCreateTables
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub "${AWS::StackName}-jobs"
+      BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: job_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: job_id
+          KeyType: HASH
+      StreamSpecification:
+        StreamViewType: NEW_IMAGE # optional
 
   # S3 Bucket for storing scraped playlists
   PlaylistsBucket:
@@ -157,7 +174,7 @@ Resources:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: !Sub "${AWS::StackName}-youtube-music-processing"
-      VisibilityTimeoutSeconds: 60
+      VisibilityTimeout: 60
       MessageRetentionPeriod: 1209600  # 14 days
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt YouTubeMusicProcessingDLQ.Arn
@@ -348,6 +365,10 @@ Outputs:
   TracksTableName:
     Description: "DynamoDB table name for tracks"
     Value: !Ref TracksTable
+  JobsTableName:
+    Condition: ShouldCreateTables
+    Description: "DynamoDB table name for jobs"
+    Value: !Ref JobsTable
   PlaylistsBucketName:
     Description: "S3 bucket name for storing scraped playlists"
     Value: !Ref PlaylistsBucket
