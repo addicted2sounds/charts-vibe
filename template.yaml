@@ -18,8 +18,21 @@ Parameters:
     Default: 'music-chart-playlists'
     Description: 'Name of existing playlists table (if CreateTables is false)'
 
+  # Controls for Beatport scraper weekly schedule
+  EnableBeatportScrapeSchedule:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: 'Enable weekly EventBridge trigger for Beatport scraper'
+
+  BeatportScrapeScheduleExpression:
+    Type: String
+    Default: 'cron(0 6 ? * MON *)'
+    Description: 'EventBridge schedule expression for Beatport scraper (UTC). Default: every Monday 06:00 UTC'
+
 Conditions:
   ShouldCreateTables: !Equals [!Ref CreateTables, 'true']
+  EnableBeatportSchedule: !Equals [!Ref EnableBeatportScrapeSchedule, 'true']
 
 Globals:
   Function:
@@ -260,6 +273,14 @@ Resources:
           Properties:
             Path: /scrape
             Method: get
+        WeeklyScrape:
+          Type: Schedule
+          Properties:
+            Name: !Sub "${AWS::StackName}-beatport-weekly"
+            Description: 'Weekly Beatport scraper trigger via EventBridge'
+            Schedule: !Ref BeatportScrapeScheduleExpression
+            Enabled: !If [EnableBeatportSchedule, true, false]
+            Input: '{"trigger":"eventbridge","source":"beatport","frequency":"weekly"}'
 
   # YouTube Playlist Creation Function
   YoutubePlaylistFunction:
