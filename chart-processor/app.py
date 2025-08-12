@@ -216,6 +216,10 @@ def publish_tracks_to_sns(tracks, source_file, job_id=None):
                             'DataType': 'String',
                             'StringValue': job_id if job_id else 'unknown'
                         },
+                        'track_id': {
+                            'DataType': 'String',
+                            'StringValue': track.get('track_id', 'unknown')
+                        },
                         'track_title': {
                             'DataType': 'String',
                             'StringValue': track.get('title', 'Unknown')
@@ -250,15 +254,16 @@ def create_job_record(expected_count, source_file):
         job_id = str(uuid.uuid4())
         timestamp = datetime.utcnow().isoformat()
 
-        # Create job record
+        # Create job record with required structure
         item = {
             'job_id': job_id,
-            'created_at': timestamp,
-            'updated_at': timestamp,
-            'source_file': source_file,
             'expected_count': expected_count,
             'processed_count': 0,
-            'status': 'processing'
+            'status': 'RUNNING',
+            'started_at': timestamp,
+            'created_at': timestamp,
+            'updated_at': timestamp,
+            'source_file': source_file
         }
 
         table.put_item(Item=item)
