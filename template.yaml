@@ -160,7 +160,7 @@ Resources:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: !Sub "${AWS::StackName}-youtube-music-processing"
-      VisibilityTimeout: 60
+      VisibilityTimeout: 180  # було 60
       MessageRetentionPeriod: 1209600  # 14 days
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt YouTubeMusicProcessingDLQ.Arn
@@ -241,7 +241,8 @@ Resources:
       Runtime: python3.9
       Architectures:
         - x86_64
-      Timeout: 30
+      Timeout: 60
+      ReservedConcurrentExecutions: 2   # стримує квоти YouTube і витрати
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !If
@@ -255,14 +256,16 @@ Resources:
               - !Ref ExistingJobsTableName
         - SQSPollerPolicy:
             QueueName: !GetAtt YouTubeMusicProcessingQueue.QueueName
-        - Version: '2012-10-17'
-          Statement:
-            - Effect: Allow
-              Action:
-                - events:PutEvents
-              Resource: !Sub "arn:aws:events:${AWS::Region}:${AWS::AccountId}:event-bus/default"
+        - Statement:          # дозвіл кидати події про завершення
+            Effect: Allow
+            Action: events:PutEvents
+            Resource: "*"
       Environment:
         Variables:
+          JOBS_TABLE: !If
+            - ShouldCreateTables
+            - !Ref JobsTable
+            - !Ref ExistingJobsTableName
           EVENT_BUS_NAME: default
       Events:
         SQSEvent:
@@ -338,14 +341,26 @@ Resources:
           Properties:
             Path: /playlists
             Method: post
-        JobCompletedEvent:
-          Type: EventBridgeRule
-          Properties:
-            Pattern:
-              source: ["music-search.orchestrator"]
-              detail-type: ["Job Completed"]
-            DeadLetterConfig:
-              Arn: !GetAtt PlaylistProcessingDLQ.Arn
+
+  # EventBridge rule for auto-starting playlist creation after job completion
+  JobCompletedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source: ["music-search.orchestrator"]
+        detail-type: ["Job Completed"]
+      Targets:
+        - Arn: !GetAtt YoutubePlaylistFunction.Arn
+          Id: CreatePlaylistTarget
+
+  # Permission for EventBridge to invoke playlist function
+  PermissionForEventsToInvokePlaylist:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref YoutubePlaylistFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt JobCompletedRule.Arn
 
   # Dead Letter Queue for playlist processing failures
   PlaylistProcessingDLQ:
