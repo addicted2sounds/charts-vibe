@@ -219,7 +219,7 @@ Resources:
             Principal:
               Service: sns.amazonaws.com
             Action: sqs:SendMessage
-            Resource: !GetAtt YouTubeMusicProcessingQueue.Arn
+            Resource: !Ref YouTubeMusicProcessingQueue
             Condition:
               ArnEquals:
                 aws:SourceArn: !Ref NewTracksQueue
