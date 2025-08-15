@@ -1,0 +1,55 @@
+#!/usr/bin/env bash
+
+set -euo pipefail
+
+echo "Deploying to LocalStack (wrapper)..."
+
+# Local AWS env for LocalStack
+export AWS_ACCESS_KEY_ID=${AWS_ACCESS_KEY_ID:-test}
+export AWS_SECRET_ACCESS_KEY=${AWS_SECRET_ACCESS_KEY:-test}
+export AWS_DEFAULT_REGION=${AWS_DEFAULT_REGION:-us-east-1}
+export AWS_ENDPOINT_URL=${AWS_ENDPOINT_URL:-http://localhost:4566}
+
+# Ensure LocalStack is up (best-effort)
+if command -v docker >/dev/null 2>&1; then
+  if docker ps --format '{{.Names}}' | grep -q '^localstack-main$'; then
+    echo "LocalStack container already running."
+  else
+    if command -v docker-compose >/dev/null 2>&1; then
+      echo "Starting LocalStack via docker-compose..."
+      docker-compose up -d localstack || true
+    elif command -v docker >/dev/null 2>&1 && [ -f docker-compose.yml ]; then
+      echo "docker-compose not found; attempting 'docker compose'..."
+      docker compose up -d localstack || true
+    fi
+  fi
+else
+  echo "Docker not available; assuming LocalStack is already running on 4566."
+fi
+
+echo "Building SAM application..."
+# Build without container to avoid extra docker dependencies
+sam build
+
+echo "Deploying SAM stack to LocalStack..."
+sam deploy \
+  --config-file samconfig.toml \
+  --stack-name charts-vibe \
+  --region us-east-1 \
+  --no-confirm-changeset \
+  --resolve-s3
+
+echo "Deployment complete. Querying resources..."
+aws cloudformation describe-stacks \
+  --endpoint-url "$AWS_ENDPOINT_URL" \
+  --stack-name charts-vibe \
+  --query 'Stacks[0].StackStatus' --output text || true
+
+echo "Listing API Gateways (if any)..."
+aws apigateway get-rest-apis --endpoint-url "$AWS_ENDPOINT_URL" --output table || true
+
+echo "DynamoDB tables:"
+aws dynamodb list-tables --endpoint-url "$AWS_ENDPOINT_URL" --output table || true
+
+echo "Done."
+

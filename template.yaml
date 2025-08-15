@@ -58,9 +58,7 @@ Globals:
           - ShouldCreateTables
           - !Ref JobsTable
           - !Ref ExistingJobsTableName
-        PLAYLISTS_BUCKET: !Ref PlaylistsBucket
-        NEW_TRACKS_TOPIC_ARN: !Ref NewTracksQueue
-        YOUTUBE_MUSIC_PROCESSING_QUEUE_URL: !Ref YouTubeMusicProcessingQueue
+        # Per-function env like PLAYLISTS_BUCKET / NEW_TRACKS_TOPIC_ARN set locally to avoid Ref cycles
 
 Resources:
   # CloudWatch Log Groups with 14 days retention for cost optimization
@@ -219,7 +217,7 @@ Resources:
             Principal:
               Service: sns.amazonaws.com
             Action: sqs:SendMessage
-            Resource: !Ref YouTubeMusicProcessingQueue
+            Resource: !GetAtt YouTubeMusicProcessingQueue.Arn
             Condition:
               ArnEquals:
                 aws:SourceArn: !Ref NewTracksQueue
@@ -300,6 +298,7 @@ Resources:
             - !Ref JobsTable
             - !Ref ExistingJobsTableName
           EVENT_BUS_NAME: default
+          PLAYLISTS_BUCKET: !Sub "${AWS::StackName}-playlists"
       Events:
         SQSEvent:
           Type: SQS
@@ -322,6 +321,7 @@ Resources:
             BucketName: !Ref PlaylistsBucket
       Environment:
         Variables:
+          PLAYLISTS_BUCKET: !Sub "${AWS::StackName}-playlists"
           USER_AGENT: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
       Events:
         ScrapeTrigger:
@@ -365,7 +365,7 @@ Resources:
               - !Ref JobsTable
               - !Ref ExistingJobsTableName
         - S3ReadPolicy:
-            BucketName: !Ref PlaylistsBucket
+            BucketName: !Sub "${AWS::StackName}-playlists"
         - SSMParameterReadPolicy:
             ParameterName: /youtube/*
       Events:
@@ -424,7 +424,7 @@ Resources:
               - !Ref JobsTable
               - !Ref ExistingJobsTableName
         - S3ReadPolicy:
-            BucketName: !Ref PlaylistsBucket
+            BucketName: !Sub "${AWS::StackName}-playlists"
         - SNSPublishMessagePolicy:
             TopicName: !GetAtt NewTracksQueue.TopicName
       Events:
@@ -438,7 +438,12 @@ Resources:
                 Rules:
                   - Name: suffix
                     Value: .json
+      Environment:
+        Variables:
+          NEW_TRACKS_TOPIC_ARN: !Ref NewTracksQueue
+          PLAYLISTS_BUCKET: !Sub "${AWS::StackName}-playlists"
     DependsOn: ChartProcessorFunctionLogGroup
+
 
 
 Outputs:
