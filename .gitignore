@@ -13,3 +13,8 @@ __pycache__/
 
 # Google OAuth2 credentials - should be stored in SSM Parameter Store
 ytplaylist/client_secret.json
+
+.env
+.env.*
+.env.local
+!.env.example
