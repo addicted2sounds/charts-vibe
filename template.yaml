@@ -185,27 +185,27 @@ Resources:
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !Ref TracksTable
-      Events:
-        CreateTrack:
-          Type: Api
-          Properties:
-            Path: /tracks
-            Method: post
-        GetTrack:
-          Type: Api
-          Properties:
-            Path: /tracks/{track_id}
-            Method: get
-        GetTracks:
-          Type: Api
-          Properties:
-            Path: /tracks
-            Method: get
-        UpdateTrack:
-          Type: Api
-          Properties:
-            Path: /tracks/{track_id}
-            Method: put
+      # Events:
+      #   CreateTrack:
+      #     Type: Api
+      #     Properties:
+      #       Path: /tracks
+      #       Method: post
+      #   GetTrack:
+      #     Type: Api
+      #     Properties:
+      #       Path: /tracks/{track_id}
+      #       Method: get
+      #   GetTracks:
+      #     Type: Api
+      #     Properties:
+      #       Path: /tracks
+      #       Method: get
+      #   UpdateTrack:
+      #     Type: Api
+      #     Properties:
+      #       Path: /tracks/{track_id}
+      #       Method: put
 
   YoutubeMusicSearchFunction:
     Type: AWS::Serverless::Function
@@ -244,12 +244,12 @@ Resources:
       Environment:
         Variables:
           USER_AGENT: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-      Events:
-        ScrapeTrigger:
-          Type: Api
-          Properties:
-            Path: /scrape
-            Method: get
+      # Events:
+      #   ScrapeTrigger:
+      #     Type: Api
+      #     Properties:
+      #       Path: /scrape
+      #       Method: get
 
   # YouTube Playlist Creation Function
   YoutubePlaylistFunction:
@@ -276,12 +276,12 @@ Resources:
             BucketName: !Ref PlaylistsBucket
         - SSMParameterReadPolicy:
             ParameterName: /youtube/*
-      Events:
-        CreatePlaylist:
-          Type: Api
-          Properties:
-            Path: /playlists
-            Method: post
+      # Events:
+      #   CreatePlaylist:
+      #     Type: Api
+      #     Properties:
+      #       Path: /playlists
+      #       Method: post
 
   # Chart Processor Function
   ChartProcessorFunction:
