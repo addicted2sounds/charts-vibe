@@ -1,10 +1,10 @@
 version = 0.1
 
 [default.deploy.parameters]
-stack_name = "music-chart"
+stack_name = "charts-vibe"
 resolve_s3 = true
-s3_prefix = "music-chart"
+s3_prefix = "charts-vibe"
 region = "us-east-1"
 capabilities = "CAPABILITY_IAM"
 image_repositories = []
-parameter_overrides = "CreateTables=\"true\" ExistingTracksTableName=\"music-chart-tracks\" ExistingPlaylistsTableName=\"music-chart-playlists\""
+parameter_overrides = "CreateTables=\"true\" ExistingTracksTableName=\"charts-vibe-tracks\" ExistingPlaylistsTableName=\"charts-vibe-playlists\""

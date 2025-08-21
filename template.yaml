@@ -10,12 +10,12 @@ Parameters:
 
   ExistingTracksTableName:
     Type: String
-    Default: 'music-chart-tracks'
+    Default: 'charts-vibe-tracks'
     Description: 'Name of existing tracks table (if CreateTables is false)'
 
   ExistingPlaylistsTableName:
     Type: String
-    Default: 'music-chart-playlists'
+    Default: 'charts-vibe-playlists'
     Description: 'Name of existing playlists table (if CreateTables is false)'
 
 Conditions:
