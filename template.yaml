@@ -134,7 +134,7 @@ Resources:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: !Sub "${AWS::StackName}-youtube-music-processing"
-      VisibilityTimeoutSeconds: 60
+      VisibilityTimeout: 60
       MessageRetentionPeriod: 1209600  # 14 days
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt YouTubeMusicProcessingDLQ.Arn
@@ -311,9 +311,9 @@ Resources:
       SourceArn: !Sub "arn:aws:s3:::${PlaylistsBucket}"
 
 Outputs:
-  ApiGatewayEndpoint:
-    Description: "API Gateway endpoint URL for Prod stage"
-    Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
+  # ApiGatewayEndpoint:
+    # Description: "API Gateway endpoint URL for Prod stage"
+    # Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
   TracksTableName:
     Description: "DynamoDB table name for tracks"
     Value: !Ref TracksTable
