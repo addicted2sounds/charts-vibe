@@ -10,13 +10,72 @@ from utils import normalize_track_data, check_track_exists_by_id
 
 def lambda_handler(event, context):
     """
-    Lambda function triggered by S3 ObjectCreated events in the charts bucket.
+    Lambda function triggered by S3 ObjectCreated events via SQS in the charts bucket.
     Processes chart files, filters tracks that already exist in the tracks table,
     and publishes new tracks to SNS queue.
     """
     try:
-        # Parse S3 event
-        s3_event = event['Records'][0]['s3']
+        # Parse SQS event containing S3 event
+        for record in event['Records']:
+            # Parse the SQS message body which contains the S3 event
+            s3_event_body = json.loads(record['body'])
+
+            # Handle S3 event notification structure
+            if 'Records' in s3_event_body:
+                for s3_record in s3_event_body['Records']:
+                    process_s3_upload_event(s3_record)
+            else:
+                print(f"Unexpected SQS message format: {s3_event_body}")
+
+        return {
+            'statusCode': 200,
+            'body': json.dumps({'message': 'Processed all SQS messages successfully'})
+        }
+
+    except Exception as e:
+        print(f"Error processing SQS messages: {str(e)}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)})
+        }
+
+def process_s3_upload_event(s3_record):
+
+def lambda_handler(event, context):
+    """
+    Lambda function triggered by S3 ObjectCreated events via SQS in the charts bucket.
+    Processes chart files, filters tracks that already exist in the tracks table,
+    and publishes new tracks to SNS queue.
+    """
+    try:
+        # Parse SQS event containing S3 event
+        for record in event['Records']:
+            # Parse the SQS message body which contains the S3 event
+            s3_event_body = json.loads(record['body'])
+
+            # Handle S3 event notification structure
+            if 'Records' in s3_event_body:
+                for s3_record in s3_event_body['Records']:
+                    process_s3_upload_event(s3_record)
+            else:
+                print(f"Unexpected SQS message format: {s3_event_body}")
+
+        return {
+            'statusCode': 200,
+            'body': json.dumps({'message': 'Processed all SQS messages successfully'})
+        }
+
+    except Exception as e:
+        print(f"Error processing SQS messages: {str(e)}")
+        return {
+            'statusCode': 500,
+            'body': json.dumps({'error': str(e)})
+        }
+
+def process_s3_upload_event(s3_record):
+    """Process a single S3 upload event"""
+    try:
+        s3_event = s3_record['s3']
         bucket_name = s3_event['bucket']['name']
         object_key = unquote_plus(s3_event['object']['key'])
 
@@ -25,18 +84,14 @@ def lambda_handler(event, context):
         # Download and parse chart file from S3
         chart_data = download_chart_from_s3(bucket_name, object_key)
         if not chart_data:
-            return {
-                'statusCode': 400,
-                'body': json.dumps({'error': 'Failed to download or parse chart file'})
-            }
+            print(f"Failed to download or parse chart file: {object_key}")
+            return
 
         # Extract tracks from chart data
         tracks = extract_tracks_from_chart(chart_data)
         if not tracks:
-            return {
-                'statusCode': 200,
-                'body': json.dumps({'message': 'No tracks found in chart file'})
-            }
+            print(f"No tracks found in chart file: {object_key}")
+            return
 
         print(f"Found {len(tracks)} tracks in chart")
 
@@ -55,23 +110,9 @@ def lambda_handler(event, context):
             published_count = publish_tracks_to_sns(new_tracks, object_key, job_id)
             print(f"Published {published_count} tracks to SNS")
 
-        return {
-            'statusCode': 200,
-            'body': json.dumps({
-                'message': f'Processed chart file successfully',
-                'job_id': job_id,
-                'total_tracks': len(tracks),
-                'new_tracks': len(new_tracks),
-                'published_to_sns': len(new_tracks)
-            })
-        }
-
     except Exception as e:
-        print(f"Error processing chart file: {str(e)}")
-        return {
-            'statusCode': 500,
-            'body': json.dumps({'error': str(e)})
-        }
+        print(f"Error processing S3 upload event: {str(e)}")
+        raise
 
 def download_chart_from_s3(bucket_name, object_key):
     """Download and parse chart file from S3"""

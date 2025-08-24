@@ -163,6 +163,8 @@ Resources:
   # S3 Bucket for storing scraped playlists
   PlaylistsBucket:
     Type: AWS::S3::Bucket
+    DependsOn:
+      - S3FileUploadQueuePolicy
     Properties:
       BucketName: !Sub "${AWS::StackName}-playlists"
       VersioningConfiguration:
@@ -177,7 +179,50 @@ Resources:
           - Id: DeleteOldVersions
             Status: Enabled
             NoncurrentVersionExpirationInDays: 30
+      NotificationConfiguration:
+        QueueConfigurations:
+          - Event: s3:ObjectCreated:*
+            Queue: !GetAtt S3FileUploadQueue.Arn
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: .json
 
+
+  # SQS Queues for S3 events
+  S3FileUploadQueue:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${AWS::StackName}-s3-upload-events"
+      VisibilityTimeout: 180
+      MessageRetentionPeriod: 1209600  # 14 days
+      RedrivePolicy:
+        deadLetterTargetArn: !GetAtt S3FileUploadDLQ.Arn
+        maxReceiveCount: 3
+
+  S3FileUploadDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${AWS::StackName}-s3-upload-events-dlq"
+      MessageRetentionPeriod: 1209600  # 14 days
+
+  # SQS Queue Policies to allow S3 to send messages
+  S3FileUploadQueuePolicy:
+    Type: AWS::SQS::QueuePolicy
+    Properties:
+      Queues:
+        - !Ref S3FileUploadQueue
+      PolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: s3.amazonaws.com
+            Action: sqs:SendMessage
+            Resource: !GetAtt S3FileUploadQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !GetAtt PlaylistsBucket.Arn
 
   # SNS Topic for new tracks queue
   NewTracksQueue:
@@ -404,7 +449,7 @@ Resources:
       QueueName: !Sub "${AWS::StackName}-playlist-processing-dlq"
       MessageRetentionPeriod: 1209600  # 14 days
 
-  # Chart Processor Function
+  # Chart Processor Function for file uploads
   ChartProcessorFunction:
     Type: AWS::Serverless::Function
     Properties:
@@ -428,17 +473,15 @@ Resources:
             BucketName: !Sub "${AWS::StackName}-playlists"
         - SNSPublishMessagePolicy:
             TopicName: !GetAtt NewTracksQueue.TopicName
+        - SQSPollerPolicy:
+            QueueName: !GetAtt S3FileUploadQueue.QueueName
       Events:
-        FromS3:
-          Type: S3
+        FromS3Upload:
+          Type: SQS
           Properties:
-            Bucket: !Ref PlaylistsBucket
-            Events: s3:ObjectCreated:*
-            Filter:
-              S3Key:
-                Rules:
-                  - Name: suffix
-                    Value: .json
+            Queue: !GetAtt S3FileUploadQueue.Arn
+            BatchSize: 10
+            MaximumBatchingWindowInSeconds: 5
       Environment:
         Variables:
           NEW_TRACKS_TOPIC_ARN: !Ref NewTracksQueue
@@ -479,6 +522,12 @@ Outputs:
   PlaylistProcessingDLQArn:
     Description: "SQS dead letter queue ARN for playlist processing failures"
     Value: !GetAtt PlaylistProcessingDLQ.Arn
+  S3FileUploadQueueArn:
+    Description: "SQS queue ARN for S3 file upload events"
+    Value: !GetAtt S3FileUploadQueue.Arn
+  S3FileUploadQueueUrl:
+    Description: "SQS queue URL for S3 file upload events"
+    Value: !Ref S3FileUploadQueue
   OrchestratorStatus:
     Description: "Status of the simple orchestrator setup"
-    Value: "Job counter orchestrator enabled - auto playlist creation on job completion"
+    Value: "Job counter orchestrator enabled - auto playlist creation on job completion with S3 event handling via SQS"
