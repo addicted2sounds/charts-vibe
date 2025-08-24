@@ -182,6 +182,9 @@ Resources:
   # SNS Topic for new tracks queue
   NewTracksQueue:
     Type: AWS::SNS::Topic
+    DependsOn:
+      - NewTracksToYouTubeMusicSubscription
+      - YouTubeMusicProcessingQueuePolicy
     Properties:
       TopicName: !Sub "${AWS::StackName}-new-tracks"
       DisplayName: "New Tracks Processing Queue"
