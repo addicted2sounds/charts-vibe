@@ -1,4 +1,0 @@
-regex:^(.*GOOGLE_OAUTH_CLIENT_ID=).*$->$1__REDACTED__
-regex:^(.*GOOGLE_OAUTH_CLIENT_SECRET=).*$->$1__REDACTED__
-regex:^(.*CLIENT_ID=).*$->$1__REDACTED__
-regex:^(.*CLIENT_SECRET=).*$->$1__REDACTED__
