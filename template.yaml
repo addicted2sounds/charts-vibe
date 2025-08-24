@@ -18,11 +18,32 @@ Parameters:
     Default: 'charts-vibe-playlists'
     Description: 'Name of existing playlists table (if CreateTables is false)'
 
+  ExistingJobsTableName:
+    Type: String
+    Default: 'charts-vibe-jobs'
+    Description: 'Name of existing jobs table (if CreateTables is false)'
+
+  # Controls for Beatport scraper weekly schedule
+  EnableBeatportScrapeSchedule:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: 'Enable weekly EventBridge trigger for Beatport scraper'
+
+  BeatportScrapeScheduleExpression:
+    Type: String
+    Default: 'cron(0 6 ? * MON *)'
+    Description: 'EventBridge schedule expression for Beatport scraper (UTC). Default: every Monday 06:00 UTC'
+
 Conditions:
   ShouldCreateTables: !Equals [!Ref CreateTables, 'true']
+  EnableBeatportSchedule: !Equals [!Ref EnableBeatportScrapeSchedule, 'true']
 
 Globals:
   Function:
+    Runtime: python3.9
+    Architectures:
+      - x86_64
     Environment:
       Variables:
         TRACKS_TABLE: !If
@@ -33,11 +54,44 @@ Globals:
           - ShouldCreateTables
           - !Ref PlaylistsTable
           - !Ref ExistingPlaylistsTableName
-        PLAYLISTS_BUCKET: !Ref PlaylistsBucket
-        NEW_TRACKS_TOPIC_ARN: !Ref NewTracksQueue
-        YOUTUBE_MUSIC_PROCESSING_QUEUE_URL: !Ref YouTubeMusicProcessingQueue
+        JOBS_TABLE: !If
+          - ShouldCreateTables
+          - !Ref JobsTable
+          - !Ref ExistingJobsTableName
+        # Per-function env like PLAYLISTS_BUCKET / NEW_TRACKS_TOPIC_ARN set locally to avoid Ref cycles
 
 Resources:
+  # CloudWatch Log Groups with 14 days retention for cost optimization
+  DatabaseFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-DatabaseFunction"
+      RetentionInDays: 14
+
+  YoutubeMusicSearchFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-YoutubeMusicSearchFunction"
+      RetentionInDays: 14
+
+  BeatportScraperFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-BeatportScraperFunction"
+      RetentionInDays: 14
+
+  YoutubePlaylistFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-YoutubePlaylistFunction"
+      RetentionInDays: 14
+
+  ChartProcessorFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-ChartProcessorFunction"
+      RetentionInDays: 14
+
   # DynamoDB Table for storing tracks
   TracksTable:
     Type: AWS::DynamoDB::Table
@@ -46,6 +100,7 @@ Resources:
     UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub "${AWS::StackName}-tracks"
+      BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: track_id
           AttributeType: S
@@ -61,7 +116,6 @@ Resources:
               KeyType: HASH
           Projection:
             ProjectionType: ALL
-      BillingMode: PAY_PER_REQUEST
 
   # DynamoDB Table for storing playlists
   PlaylistsTable:
@@ -71,6 +125,7 @@ Resources:
     UpdateReplacePolicy: Retain
     Properties:
       TableName: !Sub "${AWS::StackName}-playlists"
+      BillingMode: PAY_PER_REQUEST
       AttributeDefinitions:
         - AttributeName: playlist_id
           AttributeType: S
@@ -86,7 +141,24 @@ Resources:
               KeyType: HASH
           Projection:
             ProjectionType: ALL
+
+  # DynamoDB Table for tracking jobs (expected/processed counts)
+  JobsTable:
+    Type: AWS::DynamoDB::Table
+    Condition: ShouldCreateTables
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      TableName: !Sub "${AWS::StackName}-jobs"
       BillingMode: PAY_PER_REQUEST
+      AttributeDefinitions:
+        - AttributeName: job_id
+          AttributeType: S
+      KeySchema:
+        - AttributeName: job_id
+          KeyType: HASH
+      StreamSpecification:
+        StreamViewType: NEW_IMAGE # optional
 
   # S3 Bucket for storing scraped playlists
   PlaylistsBucket:
@@ -106,21 +178,6 @@ Resources:
             Status: Enabled
             NoncurrentVersionExpirationInDays: 30
 
-  # S3 Notification Configuration for Chart Processor
-  # PlaylistsBucketNotification:
-  #   Type: Custom::S3Notification
-  #   Properties:
-  #     ServiceToken: !GetAtt ChartProcessorFunction.Arn
-  #     BucketName: !Ref PlaylistsBucket
-  #     NotificationConfiguration:
-  #       LambdaConfigurations:
-  #         - Event: s3:ObjectCreated:*
-  #           Function: !GetAtt ChartProcessorFunction.Arn
-  #           Filter:
-  #             S3Key:
-  #               Rules:
-  #                 - Name: suffix
-  #                   Value: .json
 
   # SNS Topic for new tracks queue
   NewTracksQueue:
@@ -134,7 +191,7 @@ Resources:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: !Sub "${AWS::StackName}-youtube-music-processing"
-      VisibilityTimeout: 60
+      VisibilityTimeout: 180
       MessageRetentionPeriod: 1209600  # 14 days
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt YouTubeMusicProcessingDLQ.Arn
@@ -176,11 +233,10 @@ Resources:
   DatabaseFunction:
     Type: AWS::Serverless::Function
     Properties:
+      FunctionName: !Sub "${AWS::StackName}-DatabaseFunction"
       CodeUri: database
       Handler: app.lambda_handler
-      Runtime: python3.9
-      Architectures:
-        - x86_64
+      Runtime: python3.11
       Timeout: 30
       Policies:
         - DynamoDBCrudPolicy:
@@ -210,17 +266,37 @@ Resources:
   YoutubeMusicSearchFunction:
     Type: AWS::Serverless::Function
     Properties:
+      FunctionName: !Sub "${AWS::StackName}-YoutubeMusicSearchFunction"
       CodeUri: ytmusic
       Handler: app.lambda_handler
-      Runtime: python3.9
-      Architectures:
-        - x86_64
-      Timeout: 30
+      Runtime: python3.11
+      Timeout: 60
+      ReservedConcurrentExecutions: 2   # стримує квоти YouTube і витрати
       Policies:
         - DynamoDBCrudPolicy:
-            TableName: !Ref TracksTable
+            TableName: !If
+              - ShouldCreateTables
+              - !Ref TracksTable
+              - !Ref ExistingTracksTableName
+        - DynamoDBCrudPolicy:
+            TableName: !If
+              - ShouldCreateTables
+              - !Ref JobsTable
+              - !Ref ExistingJobsTableName
         - SQSPollerPolicy:
             QueueName: !GetAtt YouTubeMusicProcessingQueue.QueueName
+        - Statement:          # дозвіл кидати події про завершення
+            Effect: Allow
+            Action: events:PutEvents
+            Resource: "*"
+      Environment:
+        Variables:
+          JOBS_TABLE: !If
+            - ShouldCreateTables
+            - !Ref JobsTable
+            - !Ref ExistingJobsTableName
+          EVENT_BUS_NAME: default
+          PLAYLISTS_BUCKET: !Sub "${AWS::StackName}-playlists"
       Events:
         SQSEvent:
           Type: SQS
@@ -228,38 +304,47 @@ Resources:
             Queue: !GetAtt YouTubeMusicProcessingQueue.Arn
             BatchSize: 10
             MaximumBatchingWindowInSeconds: 5
+    DependsOn: YoutubeMusicSearchFunctionLogGroup
 
   BeatportScraperFunction:
     Type: AWS::Serverless::Function
     Properties:
+      FunctionName: !Sub "${AWS::StackName}-BeatportScraperFunction"
       CodeUri: scraper
       Handler: app.lambda_handler
-      Runtime: python3.9
-      Architectures:
-        - x86_64
+      Runtime: python3.11
       Timeout: 60
       Policies:
         - S3CrudPolicy:
             BucketName: !Ref PlaylistsBucket
       Environment:
         Variables:
+          PLAYLISTS_BUCKET: !Sub "${AWS::StackName}-playlists"
           USER_AGENT: 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36'
-      # Events:
-      #   ScrapeTrigger:
-      #     Type: Api
-      #     Properties:
-      #       Path: /scrape
-      #       Method: get
+      Events:
+        ScrapeTrigger:
+          Type: Api
+          Properties:
+            Path: /scrape
+            Method: get
+        WeeklyScrape:
+          Type: Schedule
+          Properties:
+            Name: !Sub "${AWS::StackName}-beatport-weekly"
+            Description: 'Weekly Beatport scraper trigger via EventBridge'
+            Schedule: !Ref BeatportScrapeScheduleExpression
+            Enabled: !If [EnableBeatportSchedule, true, false]
+            Input: '{"trigger":"eventbridge","source":"beatport","frequency":"weekly"}'
+    DependsOn: BeatportScraperFunctionLogGroup
 
   # YouTube Playlist Creation Function
   YoutubePlaylistFunction:
     Type: AWS::Serverless::Function
     Properties:
+      FunctionName: !Sub "${AWS::StackName}-YoutubePlaylistFunction"
       CodeUri: ytplaylist
       Handler: app.lambda_handler
-      Runtime: python3.9
-      Architectures:
-        - x86_64
+      Runtime: python3.11
       Timeout: 60
       Policies:
         - DynamoDBCrudPolicy:
@@ -272,43 +357,92 @@ Resources:
               - ShouldCreateTables
               - !Ref TracksTable
               - !Ref ExistingTracksTableName
+        - DynamoDBCrudPolicy:
+            TableName: !If
+              - ShouldCreateTables
+              - !Ref JobsTable
+              - !Ref ExistingJobsTableName
         - S3ReadPolicy:
-            BucketName: !Ref PlaylistsBucket
+            BucketName: !Sub "${AWS::StackName}-playlists"
         - SSMParameterReadPolicy:
             ParameterName: /youtube/*
-      # Events:
-      #   CreatePlaylist:
-      #     Type: Api
-      #     Properties:
-      #       Path: /playlists
-      #       Method: post
+      Events:
+        CreatePlaylist:
+          Type: Api
+          Properties:
+            Path: /playlists
+            Method: post
+    DependsOn: YoutubePlaylistFunctionLogGroup
+
+  # EventBridge rule for auto-starting playlist creation after job completion
+  JobCompletedRule:
+    Type: AWS::Events::Rule
+    Properties:
+      EventPattern:
+        source: ["music-search.orchestrator"]
+        detail-type: ["Job Completed"]
+      Targets:
+        - Arn: !GetAtt YoutubePlaylistFunction.Arn
+          Id: CreatePlaylistTarget
+
+  # Permission for EventBridge to invoke playlist function
+  PermissionForEventsToInvokePlaylist:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref YoutubePlaylistFunction
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt JobCompletedRule.Arn
+
+  # Dead Letter Queue for playlist processing failures
+  PlaylistProcessingDLQ:
+    Type: AWS::SQS::Queue
+    Properties:
+      QueueName: !Sub "${AWS::StackName}-playlist-processing-dlq"
+      MessageRetentionPeriod: 1209600  # 14 days
 
   # Chart Processor Function
   ChartProcessorFunction:
     Type: AWS::Serverless::Function
     Properties:
+      FunctionName: !Sub "${AWS::StackName}-ChartProcessorFunction"
       CodeUri: chart-processor
       Handler: app.lambda_handler
-      Runtime: python3.9
-      Architectures:
-        - x86_64
+      Runtime: python3.11
       Timeout: 300
       Policies:
         - DynamoDBCrudPolicy:
-            TableName: !Ref TracksTable
+            TableName: !If
+              - ShouldCreateTables
+              - !Ref TracksTable
+              - !Ref ExistingTracksTableName
+        - DynamoDBCrudPolicy:
+            TableName: !If
+              - ShouldCreateTables
+              - !Ref JobsTable
+              - !Ref ExistingJobsTableName
         - S3ReadPolicy:
-            BucketName: !Ref PlaylistsBucket
+            BucketName: !Sub "${AWS::StackName}-playlists"
         - SNSPublishMessagePolicy:
             TopicName: !GetAtt NewTracksQueue.TopicName
+      Events:
+        FromS3:
+          Type: S3
+          Properties:
+            Bucket: !Ref PlaylistsBucket
+            Events: s3:ObjectCreated:*
+            Filter:
+              S3Key:
+                Rules:
+                  - Name: suffix
+                    Value: .json
+      Environment:
+        Variables:
+          NEW_TRACKS_TOPIC_ARN: !Ref NewTracksQueue
+          PLAYLISTS_BUCKET: !Sub "${AWS::StackName}-playlists"
+    DependsOn: ChartProcessorFunctionLogGroup
 
-  # Lambda permission for S3 to invoke the chart processor
-  ChartProcessorS3Permission:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref ChartProcessorFunction
-      Action: lambda:InvokeFunction
-      Principal: s3.amazonaws.com
-      SourceArn: !Sub "arn:aws:s3:::${PlaylistsBucket}"
+
 
 Outputs:
   # ApiGatewayEndpoint:
@@ -316,7 +450,14 @@ Outputs:
     # Value: !Sub "https://${ServerlessRestApi}.execute-api.${AWS::Region}.amazonaws.com/Prod/"
   TracksTableName:
     Description: "DynamoDB table name for tracks"
-    Value: !Ref TracksTable
+    Value: !If
+      - ShouldCreateTables
+      - !Ref TracksTable
+      - !Ref ExistingTracksTableName
+  JobsTableName:
+    Condition: ShouldCreateTables
+    Description: "DynamoDB table name for jobs"
+    Value: !Ref JobsTable
   PlaylistsBucketName:
     Description: "S3 bucket name for storing scraped playlists"
     Value: !Ref PlaylistsBucket
@@ -332,3 +473,9 @@ Outputs:
   YouTubeMusicProcessingDLQArn:
     Description: "SQS dead letter queue ARN for YouTube Music processing"
     Value: !GetAtt YouTubeMusicProcessingDLQ.Arn
+  PlaylistProcessingDLQArn:
+    Description: "SQS dead letter queue ARN for playlist processing failures"
+    Value: !GetAtt PlaylistProcessingDLQ.Arn
+  OrchestratorStatus:
+    Description: "Status of the simple orchestrator setup"
+    Value: "Job counter orchestrator enabled - auto playlist creation on job completion"

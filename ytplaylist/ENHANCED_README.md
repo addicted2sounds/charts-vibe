@@ -34,7 +34,7 @@ The YouTube Playlist Lambda function has been enhanced to accept S3 playlist dat
 
 ```json
 {
-  "s3_bucket": "charts-bucket",
+  "s3_bucket": "charts-vibe-bucket",
   "s3_key": "beatport/2024/07/30/top100-120000.json",
   "playlist_name": "Custom Playlist Name (optional)",
   "description": "Custom description (optional)"
@@ -109,7 +109,7 @@ The function expects S3 files to contain playlist data in this format (typically
     "playlist_url": "https://www.youtube.com/playlist?list=PLrAK...",
     "music_url": "https://music.youtube.com/playlist?list=PLrAK...",
     "playlist_name": "Beatport Top 100",
-    "s3_source": "s3://charts-bucket/beatport/2024/07/30/top100-120000.json",
+    "s3_source": "s3://charts-vibe-bucket/beatport/2024/07/30/top100-120000.json",
     "total_tracks_in_source": 100,
     "tracks_with_video_ids": 75,
     "videos_added_successfully": 72,
@@ -198,7 +198,7 @@ lambda_client = boto3.client('lambda')
 response = lambda_client.invoke(
     FunctionName='youtube-playlist-function',
     Payload=json.dumps({
-        "s3_bucket": "music-charts-bucket",
+        "s3_bucket": "charts-vibe-bucket",
         "s3_key": "beatport/top100/2024-07-30.json"
     })
 )
@@ -209,7 +209,7 @@ response = lambda_client.invoke(
 response = lambda_client.invoke(
     FunctionName='youtube-playlist-function',
     Payload=json.dumps({
-        "s3_bucket": "music-charts-bucket",
+        "s3_bucket": "charts-vibe-bucket",
         "s3_key": "beatport/top100/2024-07-30.json",
         "playlist_name": "My Weekly Electronic Mix",
         "description": "Best electronic tracks from this week"
