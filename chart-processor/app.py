@@ -40,39 +40,6 @@ def lambda_handler(event, context):
         }
 
 def process_s3_upload_event(s3_record):
-
-def lambda_handler(event, context):
-    """
-    Lambda function triggered by S3 ObjectCreated events via SQS in the charts bucket.
-    Processes chart files, filters tracks that already exist in the tracks table,
-    and publishes new tracks to SNS queue.
-    """
-    try:
-        # Parse SQS event containing S3 event
-        for record in event['Records']:
-            # Parse the SQS message body which contains the S3 event
-            s3_event_body = json.loads(record['body'])
-
-            # Handle S3 event notification structure
-            if 'Records' in s3_event_body:
-                for s3_record in s3_event_body['Records']:
-                    process_s3_upload_event(s3_record)
-            else:
-                print(f"Unexpected SQS message format: {s3_event_body}")
-
-        return {
-            'statusCode': 200,
-            'body': json.dumps({'message': 'Processed all SQS messages successfully'})
-        }
-
-    except Exception as e:
-        print(f"Error processing SQS messages: {str(e)}")
-        return {
-            'statusCode': 500,
-            'body': json.dumps({'error': str(e)})
-        }
-
-def process_s3_upload_event(s3_record):
     """Process a single S3 upload event"""
     try:
         s3_event = s3_record['s3']
