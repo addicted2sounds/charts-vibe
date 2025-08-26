@@ -43,6 +43,7 @@ sam deploy \
   --resolve-s3 \
   --no-confirm-changeset \
   --capabilities CAPABILITY_IAM \
+  --region $AWS_DEFAULT_REGION \
   --parameter-overrides \
     CreateTables=$CREATE_TABLES \
     Environment=local
@@ -54,4 +55,4 @@ sleep 5
 
 # List DynamoDB tables
 echo "DynamoDB Tables:"
-aws dynamodb list-tables --endpoint-url=http://localhost:4566
+aws dynamodb list-tables --endpoint-url=http://localhost:4566 --region $AWS_DEFAULT_REGION
