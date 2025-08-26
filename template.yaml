@@ -2,6 +2,12 @@ AWSTemplateFormatVersion: '2010-09-09'
 Transform: AWS::Serverless-2016-10-31
 
 Parameters:
+  Environment:
+    Type: String
+    Default: 'production'
+    AllowedValues: ['production', 'local']
+    Description: 'Environment type'
+
   CreateTables:
     Type: String
     Default: 'true'
@@ -36,6 +42,7 @@ Parameters:
     Description: 'EventBridge schedule expression for Beatport scraper (UTC). Default: every Monday 06:00 UTC'
 
 Conditions:
+  IsProduction: !Equals [!Ref Environment, 'production']
   ShouldCreateTables: !Equals [!Ref CreateTables, 'true']
   EnableBeatportSchedule: !Equals [!Ref EnableBeatportScrapeSchedule, 'true']
 
@@ -62,11 +69,11 @@ Globals:
 
 Resources:
   # CloudWatch Log Groups with 14 days retention for cost optimization
-  DatabaseFunctionLogGroup:
-    Type: AWS::Logs::LogGroup
-    Properties:
-      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-DatabaseFunction"
-      RetentionInDays: 14
+  # DatabaseFunctionLogGroup:
+  #   Type: AWS::Logs::LogGroup
+  #   Properties:
+  #     LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-DatabaseFunction"
+  #     RetentionInDays: 14
 
   YoutubeMusicSearchFunctionLogGroup:
     Type: AWS::Logs::LogGroup
@@ -96,8 +103,8 @@ Resources:
   TracksTable:
     Type: AWS::DynamoDB::Table
     Condition: ShouldCreateTables
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub "${AWS::StackName}-tracks"
       BillingMode: PAY_PER_REQUEST
@@ -121,8 +128,8 @@ Resources:
   PlaylistsTable:
     Type: AWS::DynamoDB::Table
     Condition: ShouldCreateTables
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub "${AWS::StackName}-playlists"
       BillingMode: PAY_PER_REQUEST
@@ -146,8 +153,8 @@ Resources:
   JobsTable:
     Type: AWS::DynamoDB::Table
     Condition: ShouldCreateTables
-    DeletionPolicy: Retain
-    UpdateReplacePolicy: Retain
+    DeletionPolicy: !If [IsProduction, Retain, Delete]
+    UpdateReplacePolicy: !If [IsProduction, Retain, Delete]
     Properties:
       TableName: !Sub "${AWS::StackName}-jobs"
       BillingMode: PAY_PER_REQUEST
@@ -160,11 +167,9 @@ Resources:
       StreamSpecification:
         StreamViewType: NEW_IMAGE # optional
 
-  # S3 Bucket for storing scraped playlists
+  # S3 Bucket for storing scraped playlist
   PlaylistsBucket:
     Type: AWS::S3::Bucket
-    DependsOn:
-      - S3FileUploadQueuePolicy
     Properties:
       BucketName: !Sub "${AWS::StackName}-playlists"
       VersioningConfiguration:
@@ -227,9 +232,6 @@ Resources:
   # SNS Topic for new tracks queue
   NewTracksQueue:
     Type: AWS::SNS::Topic
-    DependsOn:
-      - NewTracksToYouTubeMusicSubscription
-      - YouTubeMusicProcessingQueuePolicy
     Properties:
       TopicName: !Sub "${AWS::StackName}-new-tracks"
       DisplayName: "New Tracks Processing Queue"
@@ -278,17 +280,17 @@ Resources:
       Endpoint: !GetAtt YouTubeMusicProcessingQueue.Arn
 
   # Database service function
-  DatabaseFunction:
-    Type: AWS::Serverless::Function
-    Properties:
-      FunctionName: !Sub "${AWS::StackName}-DatabaseFunction"
-      CodeUri: database
-      Handler: app.lambda_handler
-      Runtime: python3.11
-      Timeout: 30
-      Policies:
-        - DynamoDBCrudPolicy:
-            TableName: !Ref TracksTable
+  # DatabaseFunction:
+  #   Type: AWS::Serverless::Function
+  #   Properties:
+  #     FunctionName: !Sub "${AWS::StackName}-DatabaseFunction"
+  #     CodeUri: database
+  #     Handler: app.lambda_handler
+  #     Runtime: python3.11
+  #     Timeout: 30
+  #     Policies:
+  #       - DynamoDBCrudPolicy:
+  #           TableName: !Ref TracksTable
       # Events:
       #   CreateTrack:
       #     Type: Api
