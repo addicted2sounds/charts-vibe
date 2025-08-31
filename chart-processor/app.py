@@ -8,36 +8,98 @@ from urllib.parse import unquote_plus
 # Import local utilities (bundled with Lambda function)
 from utils import normalize_track_data, check_track_exists_by_id
 
+
+def extract_s3_records(payload):
+    """Extract a list of valid-ish S3 event records from a payload.
+
+    Accepts SQS message bodies that contain S3 Event Notification formats.
+    Returns a list (possibly empty) of candidate records from 'Records'.
+    """
+    try:
+        if isinstance(payload, str):
+            # Try to parse if it's JSON-in-string
+            payload = json.loads(payload)
+    except Exception:
+        return []
+
+    if not isinstance(payload, dict):
+        return []
+
+    records = payload.get('Records')
+    if isinstance(records, list):
+        # Filter to entries that look like S3 event records
+        candidates = []
+        for rec in records:
+            if isinstance(rec, dict) and (rec.get('eventSource') == 'aws:s3' or 's3' in rec):
+                candidates.append(rec)
+        return candidates
+
+    # No Records array -> not an S3 event notification we can consume
+    return []
+
+
+def is_valid_s3_record(s3_record):
+    """Basic validation for required S3 record structure."""
+    try:
+        s3 = s3_record.get('s3') if isinstance(s3_record, dict) else None
+        if not isinstance(s3, dict):
+            return False
+        bucket = s3.get('bucket', {})
+        obj = s3.get('object', {})
+        return isinstance(bucket, dict) and isinstance(obj, dict) and 'name' in bucket and 'key' in obj
+    except Exception:
+        return False
+
 def lambda_handler(event, context):
     """
     Lambda function triggered by S3 ObjectCreated events via SQS in the charts bucket.
     Processes chart files, filters tracks that already exist in the tracks table,
     and publishes new tracks to SNS queue.
     """
-    try:
-        # Parse SQS event containing S3 event
-        for record in event['Records']:
-            # Parse the SQS message body which contains the S3 event
-            s3_event_body = json.loads(record['body'])
+    processed = 0
+    skipped = 0
+    failed = 0
 
-            # Handle S3 event notification structure
-            if 'Records' in s3_event_body:
-                for s3_record in s3_event_body['Records']:
+    # Parse SQS event containing S3 events. Process each record defensively
+    for record in event.get('Records', []):
+        try:
+            body = record.get('body', '{}')
+            s3_records = extract_s3_records(body)
+
+            if not s3_records:
+                # Nothing we can process from this message
+                print(f"Skipping non-S3 or malformed messageId={record.get('messageId')}")
+                skipped += 1
+                continue
+
+            for s3_record in s3_records:
+                if not is_valid_s3_record(s3_record):
+                    print("Skipping malformed S3 record (missing bucket/object info)")
+                    skipped += 1
+                    continue
+                try:
                     process_s3_upload_event(s3_record)
-            else:
-                print(f"Unexpected SQS message format: {s3_event_body}")
+                    processed += 1
+                except Exception as e:
+                    # Never let one failure poison the whole batch
+                    failed += 1
+                    print(f"Error processing S3 record from SQS messageId={record.get('messageId')}: {str(e)}")
 
-        return {
-            'statusCode': 200,
-            'body': json.dumps({'message': 'Processed all SQS messages successfully'})
-        }
+        except Exception as e:
+            # Malformed body or JSON – log and skip this record
+            failed += 1
+            print(f"Error handling SQS record messageId={record.get('messageId')}: {str(e)}")
 
-    except Exception as e:
-        print(f"Error processing SQS messages: {str(e)}")
-        return {
-            'statusCode': 500,
-            'body': json.dumps({'error': str(e)})
-        }
+    # Always return success so the batch advances; individual issues are logged above
+    return {
+        'statusCode': 200,
+        'body': json.dumps({
+            'message': 'Processed SQS batch',
+            'processed': processed,
+            'skipped': skipped,
+            'failed': failed
+        })
+    }
 
 def process_s3_upload_event(s3_record):
     """Process a single S3 upload event"""
@@ -79,7 +141,8 @@ def process_s3_upload_event(s3_record):
 
     except Exception as e:
         print(f"Error processing S3 upload event: {str(e)}")
-        raise
+        # Do not raise here; caller handles per-record errors to avoid requeueing entire batch
+        return
 
 def download_chart_from_s3(bucket_name, object_key):
     """Download and parse chart file from S3"""
