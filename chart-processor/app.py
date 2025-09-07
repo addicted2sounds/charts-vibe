@@ -9,35 +9,6 @@ from urllib.parse import unquote_plus
 from utils import normalize_track_data, check_track_exists_by_id
 
 
-def extract_s3_records(payload):
-    """Extract a list of valid-ish S3 event records from a payload.
-
-    Accepts SQS message bodies that contain S3 Event Notification formats.
-    Returns a list (possibly empty) of candidate records from 'Records'.
-    """
-    try:
-        if isinstance(payload, str):
-            # Try to parse if it's JSON-in-string
-            payload = json.loads(payload)
-    except Exception:
-        return []
-
-    if not isinstance(payload, dict):
-        return []
-
-    records = payload.get('Records')
-    if isinstance(records, list):
-        # Filter to entries that look like S3 event records
-        candidates = []
-        for rec in records:
-            if isinstance(rec, dict) and (rec.get('eventSource') == 'aws:s3' or 's3' in rec):
-                candidates.append(rec)
-        return candidates
-
-    # No Records array -> not an S3 event notification we can consume
-    return []
-
-
 def is_valid_s3_record(s3_record):
     """Basic validation for required S3 record structure."""
     try:
@@ -52,7 +23,7 @@ def is_valid_s3_record(s3_record):
 
 def lambda_handler(event, context):
     """
-    Lambda function triggered by S3 ObjectCreated events via SQS in the charts bucket.
+    Lambda function triggered by S3 ObjectCreated events.
     Processes chart files, filters tracks that already exist in the tracks table,
     and publishes new tracks to SNS queue.
     """
@@ -60,41 +31,37 @@ def lambda_handler(event, context):
     skipped = 0
     failed = 0
 
-    # Parse SQS event containing S3 events. Process each record defensively
+    # Process each S3 event record
     for record in event.get('Records', []):
         try:
-            body = record.get('body', '{}')
-            s3_records = extract_s3_records(body)
-
-            if not s3_records:
-                # Nothing we can process from this message
-                print(f"Skipping non-S3 or malformed messageId={record.get('messageId')}")
+            # Validate this is a proper S3 event record
+            if record.get('eventSource') != 'aws:s3' or 's3' not in record:
+                print(f"Skipping non-S3 record: {record.get('eventSource', 'unknown')}")
                 skipped += 1
                 continue
 
-            for s3_record in s3_records:
-                if not is_valid_s3_record(s3_record):
-                    print("Skipping malformed S3 record (missing bucket/object info)")
-                    skipped += 1
-                    continue
-                try:
-                    process_s3_upload_event(s3_record)
-                    processed += 1
-                except Exception as e:
-                    # Never let one failure poison the whole batch
-                    failed += 1
-                    print(f"Error processing S3 record from SQS messageId={record.get('messageId')}: {str(e)}")
+            if not is_valid_s3_record(record):
+                print("Skipping malformed S3 record (missing bucket/object info)")
+                skipped += 1
+                continue
+
+            try:
+                process_s3_upload_event(record)
+                processed += 1
+            except Exception as e:
+                failed += 1
+                print(f"Error processing S3 record: {str(e)}")
 
         except Exception as e:
-            # Malformed body or JSON – log and skip this record
+            # Malformed record – log and skip this record
             failed += 1
-            print(f"Error handling SQS record messageId={record.get('messageId')}: {str(e)}")
+            print(f"Error handling record: {str(e)}")
 
     # Always return success so the batch advances; individual issues are logged above
     return {
         'statusCode': 200,
         'body': json.dumps({
-            'message': 'Processed SQS batch',
+            'message': 'Processed S3 event batch',
             'processed': processed,
             'skipped': skipped,
             'failed': failed
@@ -346,16 +313,11 @@ def create_job_record(expected_count, source_file):
         return None
 
 if __name__ == "__main__":
-    # Test with a sample S3 event
-    test_event = {
-        "Records": [
-            {
-                "s3": {
-                    "bucket": {"name": "test-charts-bucket"},
-                    "object": {"key": "beatport/2024/07/30/top100-120000.json"}
-                }
-            }
-        ]
-    }
+    import os
 
+    events_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'events')
+    sqs_event_file = os.path.join(events_dir, 'sqs-s3-event.json')
+    with open(sqs_event_file, 'r') as f:
+        test_event = json.load(f)
+    print(f"Loaded test event from {sqs_event_file}")
     print(json.dumps(lambda_handler(test_event, None), indent=2))

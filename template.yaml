@@ -484,6 +484,7 @@ Resources:
             Queue: !GetAtt S3FileUploadQueue.Arn
             BatchSize: 10
             MaximumBatchingWindowInSeconds: 5
+            Enabled: true
       Environment:
         Variables:
           NEW_TRACKS_TOPIC_ARN: !Ref NewTracksQueue
