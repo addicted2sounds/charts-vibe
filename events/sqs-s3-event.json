@@ -1,0 +1,21 @@
+{
+  "Records": [
+    {
+      "messageId": "6c33f4ae-fd54-40ae-8bd0-c298d0b23ee2",
+      "receiptHandle": "MWFiNmU5MmQtYWU3OS00N2NhLWFjNWUtYzZjNzZhYjcwODY3IGFybjphd3M6c3FzOnVzLWVhc3QtMTowMDAwMDAwMDAwMDA6Y2hhcnRzLXZpYmUtczMtdXBsb2FkLWV2ZW50cyA2YzMzZjRhZS1mZDU0LTQwYWUtOGJkMC1jMjk4ZDBiMjNlZTIgMTc1NzI2MDA4OC44MTI4ODA4",
+      "body": "{\"Records\": [{\"eventVersion\": \"2.1\", \"eventSource\": \"aws:s3\", \"awsRegion\": \"us-east-1\", \"eventTime\": \"2025-09-07T15:48:08.808Z\", \"eventName\": \"ObjectCreated:Put\", \"userIdentity\": {\"principalId\": \"AIDAJDPLRKLG7UEXAMPLE\"}, \"requestParameters\": {\"sourceIPAddress\": \"127.0.0.1\"}, \"responseElements\": {\"x-amz-request-id\": \"6abe7192\", \"x-amz-id-2\": \"eftixk72aD6Ap51TnqcoF8eFidJG9Z/2\"}, \"s3\": {\"s3SchemaVersion\": \"1.0\", \"configurationId\": \"f9af2f56\", \"bucket\": {\"name\": \"charts-vibe-playlists\", \"ownerIdentity\": {\"principalId\": \"A3NL1KOZZKExample\"}, \"arn\": \"arn:aws:s3:::charts-vibe-playlists\"}, \"object\": {\"key\": \"beatport/2025/09/07/top100-154808.json\", \"sequencer\": \"0055AED6DCD90281E5\", \"versionId\": \"AZkk3BYIKYdyEEK0FuCTtXuzxFKKI7nO\", \"eTag\": \"a0423ec4f920c78842feccab39278e2d\", \"size\": 42341}}}]}",
+      "attributes": {
+        "SenderId": "000000000000",
+        "SentTimestamp": "1757260088812",
+        "AWSTraceHeader": "Root=1-68bda937-f5215265cc3a52be322c4b58;Parent=97298c21ca746ee7;Sampled=1",
+        "ApproximateReceiveCount": "1",
+        "ApproximateFirstReceiveTimestamp": "1757260088812"
+      },
+      "messageAttributes": {},
+      "md5OfBody": "ffa59c79ae065581c5b33ffc87135fd0",
+      "eventSourceARN": "arn:aws:sqs:us-east-1:000000000000:charts-vibe-s3-upload-events",
+      "eventSource": "aws:sqs",
+      "awsRegion": "us-east-1"
+    }
+  ]
+}

@@ -2,14 +2,27 @@ services:
   localstack:
     container_name: localstack-main
     image: localstack/localstack:latest
+    hostname: localstack
+    networks:
+      - localstack-net
     ports:
       - "4566:4566"            # LocalStack Gateway
       - "4510-4559:4510-4559"  # External services port range
+      # - "19891:19891"          # Lambda debug port
     environment:
-      - DEBUG=${DEBUG:-0}
-      # - SERVICES=lambda,dynamodb,apigateway,s3,iam,sqs,sns,sts,logs,cloudformation
-      - PERSISTENCE=1
-      - LAMBDA_DOCKER_FLAGS='-p 19891:19891'
+      - DEBUG=1
+      - DATA_DIR=/tmp/localstack/data
+      - LAMBDA_EXECUTOR=docker-reuse
+      - LAMBDA_REMOTE_DOCKER=false
+      - LAMBDA_REMOVE_CONTAINERS=true
+      - DOCKER_HOST=unix:///var/run/docker.sock
+      - HOST_TMP_FOLDER=${TMPDIR}
+      # - LAMBDA_DOCKER_FLAGS='-p 19891:19891'
     volumes:
       - "${LOCALSTACK_VOLUME_DIR:-./volume}:/var/lib/localstack"
       - "/var/run/docker.sock:/var/run/docker.sock"
+networks:
+  localstack-net:
+    external: false
+    driver: bridge
+    name: localstack-net

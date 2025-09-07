@@ -21,47 +21,83 @@ def is_valid_s3_record(s3_record):
     except Exception:
         return False
 
-def lambda_handler(event, context):
+def lambda_handler(message, context):
     """
-    Lambda function triggered by S3 ObjectCreated events.
+    Lambda function triggered by SQS messages containing S3 ObjectCreated events.
     Processes chart files, filters tracks that already exist in the tracks table,
     and publishes new tracks to SNS queue.
     """
     processed = 0
     skipped = 0
     failed = 0
-
-    # Process each S3 event record
-    for record in event.get('Records', []):
+    # Parse event if it's a JSON string (for local testing)
+    if isinstance(message, str):
         try:
-            # Validate this is a proper S3 event record
-            if record.get('eventSource') != 'aws:s3' or 's3' not in record:
-                print(f"Skipping non-S3 record: {record.get('eventSource', 'unknown')}")
+            event = json.loads(message)
+        except json.JSONDecodeError as e:
+            print(f"Error decoding JSON event: {str(e)}")
+            return {
+                'statusCode': 400,
+                'body': json.dumps({'message': 'Invalid JSON event'})
+            }
+    else:
+        event = message
+    print(f"Received event: {json.dumps(event)}")
+
+    # Process each SQS record
+    for sqs_record in event.get('Records', []):
+        try:
+            # Validate this is an SQS record
+            if sqs_record.get('eventSource') != 'aws:sqs':
+                print(f"Skipping non-SQS record: {sqs_record.get('eventSource', 'unknown')}")
                 skipped += 1
                 continue
 
-            if not is_valid_s3_record(record):
-                print("Skipping malformed S3 record (missing bucket/object info)")
-                skipped += 1
-                continue
-
+            # Extract S3 event from SQS message body
             try:
-                process_s3_upload_event(record)
-                processed += 1
-            except Exception as e:
-                failed += 1
-                print(f"Error processing S3 record: {str(e)}")
+                s3_event = json.loads(sqs_record['body'])
+                print(f"Extracted S3 event from SQS message: {json.dumps(s3_event)}")
+            except (KeyError, json.JSONDecodeError) as e:
+                print(f"Error parsing SQS message body: {str(e)}")
+                skipped += 1
+                continue
+
+            # Process each S3 record within the SQS message
+            for s3_record in s3_event.get('Records', []):
+                try:
+                    # Validate this is a proper S3 event record
+                    if s3_record.get('eventSource') != 'aws:s3' or 's3' not in s3_record:
+                        print(f"Skipping non-S3 record in SQS message: {s3_record.get('eventSource', 'unknown')}")
+                        skipped += 1
+                        continue
+
+                    if not is_valid_s3_record(s3_record):
+                        print("Skipping malformed S3 record (missing bucket/object info)")
+                        skipped += 1
+                        continue
+
+                    try:
+                        process_s3_upload_event(s3_record)
+                        processed += 1
+                    except Exception as e:
+                        failed += 1
+                        print(f"Error processing S3 record: {str(e)}")
+
+                except Exception as e:
+                    # Malformed S3 record – log and skip this record
+                    failed += 1
+                    print(f"Error handling S3 record: {str(e)}")
 
         except Exception as e:
-            # Malformed record – log and skip this record
+            # Malformed SQS record – log and skip this record
             failed += 1
-            print(f"Error handling record: {str(e)}")
+            print(f"Error handling SQS record: {str(e)}")
 
     # Always return success so the batch advances; individual issues are logged above
     return {
         'statusCode': 200,
         'body': json.dumps({
-            'message': 'Processed S3 event batch',
+            'message': 'Processed SQS batch with S3 events',
             'processed': processed,
             'skipped': skipped,
             'failed': failed
@@ -318,6 +354,6 @@ if __name__ == "__main__":
     events_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), 'events')
     sqs_event_file = os.path.join(events_dir, 'sqs-s3-event.json')
     with open(sqs_event_file, 'r') as f:
-        test_event = json.load(f)
+        test_event = f.read()
     print(f"Loaded test event from {sqs_event_file}")
     print(json.dumps(lambda_handler(test_event, None), indent=2))

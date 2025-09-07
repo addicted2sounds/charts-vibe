@@ -19,11 +19,9 @@ if [[ "$CLEAN" == "true" ]]; then
     echo "Force cleaning existing stack..."
     aws cloudformation delete-stack --stack-name charts-vibe --endpoint-url=http://localhost:4566 --region us-east-1 2>/dev/null || true
     sleep 10
-fi
+    echo "Waiting for stack deletion..."
 
-# Wait for cleanup to complete
-echo "Waiting for stack deletion..."
-sleep 10
+fi
 
 # Check if tables exist and set parameters accordingly
 TABLES_EXIST=$(aws dynamodb list-tables --endpoint-url=http://localhost:4566 --region us-east-1 --query 'TableNames[?contains(@, `charts-vibe-jobs`)]' --output text 2>/dev/null)
@@ -37,7 +35,7 @@ else
 fi
 
 # Build and deploy with SAM
-sam build --use-container
+sam build #--use-container
 sam deploy \
   --stack-name charts-vibe \
   --resolve-s3 \

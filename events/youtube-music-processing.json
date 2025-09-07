@@ -1,0 +1,34 @@
+{
+  "Type": "Notification",
+  "MessageId": "06b45666-c276-4843-9fff-5781823315c6",
+  "TopicArn": "arn:aws:sns:us-east-1:000000000000:charts-vibe-new-tracks",
+  "Message": "{\"track\": {\"title\": \"Fantasy Original Mix\", \"artist\": \"RSquared\", \"track_id\": \"cc92412152a1dc8575ffddb28b9be4ea0ce53cfc6206590fcb793c5dc0f00074\", \"album\": \"\", \"genre\": \"Tech House\", \"label\": \"RWorks\", \"bpm\": 128, \"key\": \"Bb Minor\", \"rank\": 38, \"rating\": null, \"release_date\": null, \"beatport_url\": \"https://www.beatport.com/track/fantasy/20648420\", \"beatport_id\": \"20648420\", \"metadata\": {\"original_data\": {\"position\": 38, \"title\": \"Fantasy Original Mix\", \"artist\": \"RSquared\", \"label\": \"RWorks\", \"genre\": \"Tech House\", \"bpm\": 128, \"key\": \"Bb Minor\", \"beatport_id\": \"20648420\", \"url\": \"https://www.beatport.com/track/fantasy/20648420\", \"track_id\": \"cc92412152a1dc8575ffddb28b9be4ea0ce53cfc6206590fcb793c5dc0f00074\"}, \"source\": \"chart-processor\"}}, \"source_file\": \"beatport/2025/09/07/top100-130408.json\", \"job_id\": \"abf57dfb-42bc-4c8b-862e-aed388f62df6\", \"timestamp\": \"2025-09-07T13:14:15.919486\", \"action\": \"process_new_track\"}",
+  "Timestamp": "2025-09-07T13:14:15.922Z",
+  "UnsubscribeURL": "http://localhost.localstack.cloud:4566/?Action=Unsubscribe&SubscriptionArn=arn:aws:sns:us-east-1:000000000000:charts-vibe-new-tracks:9e0112db-749b-43bd-8c3a-fb8893fe4e66",
+  "Subject": "New track: Fantasy Original Mix - RSquared",
+  "MessageAttributes": {
+    "source_file": {
+      "Type": "String",
+      "Value": "beatport/2025/09/07/top100-130408.json"
+    },
+    "job_id": {
+      "Type": "String",
+      "Value": "abf57dfb-42bc-4c8b-862e-aed388f62df6"
+    },
+    "track_id": {
+      "Type": "String",
+      "Value": "cc92412152a1dc8575ffddb28b9be4ea0ce53cfc6206590fcb793c5dc0f00074"
+    },
+    "track_title": {
+      "Type": "String",
+      "Value": "Fantasy Original Mix"
+    },
+    "track_artist": {
+      "Type": "String",
+      "Value": "RSquared"
+    }
+  },
+  "SignatureVersion": "1",
+  "Signature": "NU8K5utEf2hCLecBttUeYwPKuWE1wBWVgzwdnlzhgK77muAQvNH5tAYm4gjvUszSF7Oan6Tqj7KA+FPWcn+1efzw1JsysRk6xlkZZg43ChPwr3aMAoeBR+1tHBRCxp4Ll5UBFpAchMcJQE384L9WbsnY485dY25ic+onTe687FNPOdX6lO923xdPNpwg/k1iTJUa/UFprAv8jz9SXXPqLlmvWhmBlrJ1kJOAXDrvrb8/szV847164xktfOAHvASHP2CQiKdLuoCWC4GMkTHyqT2X14nOsydEvc6J7nc8BoGb9sfvlkVA8L+pHMJGUp3zyiCX8BP2bMeI2Y1unMWQqA==",
+  "SigningCertURL": "http://localhost.localstack.cloud:4566/_aws/sns/SimpleNotificationService-6c6f63616c737461636b69736e696365.pem"
+}

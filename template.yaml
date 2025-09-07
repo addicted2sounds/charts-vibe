@@ -48,9 +48,9 @@ Conditions:
 
 Globals:
   Function:
-    Runtime: python3.9
+    Runtime: python3.11
     Architectures:
-      - x86_64
+      - arm64
     Environment:
       Variables:
         TRACKS_TABLE: !If
