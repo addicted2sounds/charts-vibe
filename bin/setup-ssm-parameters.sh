@@ -6,7 +6,7 @@
 set -e
 
 CLIENT_SECRET_FILE="ytplaylist/client_secret.json"
-SSM_PREFIX="/ytmusic-playlist-app"
+SSM_PREFIX="/charts-vibe"
 
 # Check if client_secret.json exists
 if [ ! -f "$CLIENT_SECRET_FILE" ]; then

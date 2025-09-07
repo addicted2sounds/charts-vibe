@@ -1,0 +1,7 @@
+{
+  "job_id": "17a48778-2dcd-4f0f-b18d-83a13508bd38",
+  "s3_bucket": "charts-vibe-playlists",
+  "s3_key": "beatport/2025/09/07/top100-171753.json",
+  "expected_count": 100,
+  "processed_count": 100
+}

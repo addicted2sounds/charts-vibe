@@ -16,20 +16,20 @@ def lambda_handler(event, context):
     Create a public YouTube playlist from S3 playlist data with enriched video IDs from DynamoDB
 
     Expected event formats:
-    
+
     1. EventBridge event (from job completion):
     {
         "source": ["music-search.orchestrator"],
         "detail-type": ["Job Completed"],
         "detail": {
             "job_id": "uuid",
-            "s3_bucket": "bucket-name", 
+            "s3_bucket": "bucket-name",
             "s3_key": "path/to/file.json",
             "expected_count": 10,
             "processed_count": 10
         }
     }
-    
+
     2. Direct API call with S3 data:
     {
         "s3_bucket": "charts-bucket",
@@ -50,7 +50,7 @@ def lambda_handler(event, context):
         if event.get('source') == 'music-search.orchestrator' and event.get('detail-type') == 'Job Completed':
             print("Processing EventBridge job completion event")
             return handle_job_completed_event(event)
-        
+
         # Check if using new S3-based format or legacy direct video IDs format
         s3_bucket = event.get('s3_bucket')
         s3_key = event.get('s3_key')
@@ -79,19 +79,19 @@ def handle_job_completed_event(event):
         job_id = detail.get('job_id')
         s3_bucket = detail.get('s3_bucket')
         s3_key = detail.get('s3_key')
-        
+
         if not s3_bucket or not s3_key:
             return {
                 'statusCode': 400,
                 'body': json.dumps({'error': 'Missing s3_bucket or s3_key in job completion event'})
             }
-            
+
         print(f"Creating playlist for completed job {job_id} from s3://{s3_bucket}/{s3_key}")
-        
+
         # Create playlist name based on source file and job completion
         playlist_name = f"Auto Playlist - {s3_key.split('/')[-1].replace('.json', '')} - {datetime.utcnow().strftime('%Y-%m-%d')}"
         description = f"Automatically created playlist from job {job_id} completed on {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}. Source: {s3_key}"
-        
+
         # Use the same S3-based playlist creation logic
         modified_event = {
             's3_bucket': s3_bucket,
@@ -100,9 +100,9 @@ def handle_job_completed_event(event):
             'description': description,
             'job_id': job_id  # Include for tracking
         }
-        
+
         return handle_s3_playlist_creation(modified_event, s3_bucket, s3_key)
-        
+
     except Exception as e:
         print(f"Error handling job completed event: {str(e)}")
         return {
@@ -523,7 +523,7 @@ def get_enriched_tracks_from_dynamodb(tracks):
     try:
         # Initialize DynamoDB
         dynamodb = boto3.resource('dynamodb')
-        table_name = os.environ.get('TRACKS_TABLE', 'tracks')
+        table_name = os.environ.get('TRACKS_TABLE', 'charts-vibe-tracks')
         table = dynamodb.Table(table_name)
 
         enriched_tracks = []
