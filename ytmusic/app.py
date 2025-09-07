@@ -57,12 +57,13 @@ def handle_sqs_events(event, context):
                 if track_data:
                     title = track_data.get('title', '').strip()
                     artist = track_data.get('artist', '').strip()
+                    track_id = track_data.get('track_id', '').strip()  # Extract track_id from SNS message
 
                     if title and artist:
-                        print(f"Processing track from SQS: {title} - {artist} (Job: {job_id})")
+                        print(f"Processing track from SQS: {title} - {artist} (Job: {job_id}, Track ID: {track_id[:8] if track_id else 'None'}...)")
 
-                        # Process the track using existing logic
-                        result = process_track_search(title, artist)
+                        # Process the track using existing logic, passing the track_id from SNS
+                        result = process_track_search(title, artist, track_id)
 
                         # Update job counter if successful processing and job_id exists
                         if result and job_id:
@@ -71,6 +72,7 @@ def handle_sqs_events(event, context):
                         results.append({
                             'track': f"{title} - {artist}",
                             'job_id': job_id,
+                            'track_id': track_id,
                             'status': 'success' if result else 'failed',
                             'result': result
                         })
@@ -79,6 +81,7 @@ def handle_sqs_events(event, context):
                         results.append({
                             'track': 'unknown',
                             'job_id': job_id,
+                            'track_id': track_data.get('track_id', ''),
                             'status': 'failed',
                             'error': 'missing title or artist'
                         })
@@ -126,6 +129,12 @@ def handle_direct_request(event, context):
 def process_track_search(title, artist, track_id=None):
     """
     Core logic for searching and storing track data
+
+    Args:
+        title: Track title
+        artist: Track artist
+        track_id: Optional track ID (from SNS message or direct API call)
+                 If provided from SNS, this should be used to maintain consistency
     """
     try:
         ytmusic = YTMusic()
@@ -145,43 +154,45 @@ def process_track_search(title, artist, track_id=None):
 
         stored_track_id = None
 
-        # Update database if track_id is provided
+        # Priority 1: If track_id is provided (from SNS message), use it directly
         if track_id:
             try:
-                success = update_track_with_youtube_data(track_id, youtube_data)
+                # Try to create or update the track in a single operation
+                success = create_or_update_track_with_id(track_id, title, artist, youtube_data)
                 if success:
                     stored_track_id = track_id
-                    print(f"Updated track {track_id} with YouTube data")
+                    print(f"Successfully processed track with provided ID: {track_id[:8]}...")
                 else:
-                    print(f"Failed to update track {track_id} - may not exist")
+                    print(f"Failed to process track with provided ID: {track_id[:8]}...")
             except Exception as e:
-                print(f"Error updating database: {str(e)}")
+                print(f"Error processing track with provided ID {track_id[:8]}...: {str(e)}")
 
-        # Try to find and update existing track by title/artist using hash-based lookup
-        try:
-            # Generate the expected track ID for this title/artist combination
-            expected_track_id = generate_track_id(title, artist)
-            existing_track = check_track_exists(title, artist)
+        # Priority 2: Fallback to hash-based lookup if no track_id provided or if above failed
+        if not stored_track_id:
+            try:
+                # Generate the expected track ID for this title/artist combination
+                expected_track_id = generate_track_id(title, artist)
+                existing_track = check_track_exists(title, artist)
 
-            if existing_track:
-                # Track exists - update with YouTube data if it doesn't have it
-                if not existing_track.get('youtube_video_id'):
-                    success = update_track_with_youtube_data(existing_track['track_id'], youtube_data)
-                    if success:
-                        stored_track_id = existing_track['track_id']
-                        print(f"Updated existing track {stored_track_id} with YouTube data")
+                if existing_track:
+                    # Track exists - update with YouTube data if it doesn't have it
+                    if not existing_track.get('youtube_video_id'):
+                        success = update_track_with_youtube_data(existing_track['track_id'], youtube_data)
+                        if success:
+                            stored_track_id = existing_track['track_id']
+                            print(f"Updated existing track {stored_track_id[:8]}... with YouTube data")
+                        else:
+                            print(f"Failed to update existing track {existing_track['track_id'][:8]}...")
                     else:
-                        print(f"Failed to update existing track {existing_track['track_id']}")
+                        stored_track_id = existing_track['track_id']
+                        print(f"Track {stored_track_id[:8]}... already has YouTube data")
                 else:
-                    stored_track_id = existing_track['track_id']
-                    print(f"Track {stored_track_id} already has YouTube data")
-            else:
-                # No existing track found, create a new one with hash-based ID
-                stored_track_id = create_new_track(youtube_data)
-                if stored_track_id:
-                    print(f"Created new track with hash-based ID: {stored_track_id}")
-        except Exception as e:
-            print(f"Error finding/updating/creating track: {str(e)}")
+                    # No existing track found, create a new one with hash-based ID
+                    stored_track_id = create_new_track(youtube_data)
+                    if stored_track_id:
+                        print(f"Created new track with hash-based ID: {stored_track_id[:8]}...")
+            except Exception as e:
+                print(f"Error finding/updating/creating track: {str(e)}")
 
         response_body = youtube_data.copy()
         if stored_track_id:
@@ -289,6 +300,64 @@ def create_new_track(youtube_data):
     except Exception as e:
         print(f"Error creating new track: {str(e)}")
         return None
+
+def create_or_update_track_with_id(track_id, title, artist, youtube_data):
+    """
+    Create or update a track with the provided ID in a single DynamoDB operation.
+    Uses conditional put/update to minimize API calls and charges.
+    """
+    try:
+        dynamodb = boto3.resource('dynamodb')
+        table_name = os.environ.get('TRACKS_TABLE', 'tracks')
+        table = dynamodb.Table(table_name)
+        timestamp = datetime.utcnow().isoformat()
+
+        # First, try to update an existing item (if it exists and needs YouTube data)
+        try:
+            response = table.update_item(
+                Key={'track_id': track_id},
+                UpdateExpression="SET youtube_video_id = :video_id, youtube_url = :url, updated_at = :timestamp",
+                ConditionExpression="attribute_exists(track_id) AND attribute_not_exists(youtube_video_id)",
+                ExpressionAttributeValues={
+                    ':video_id': youtube_data['videoId'],
+                    ':url': youtube_data['url'],
+                    ':timestamp': timestamp
+                },
+                ReturnValues='ALL_NEW'
+            )
+            print(f"Updated existing track {track_id[:8]}... with YouTube data")
+            return True
+        except dynamodb.meta.client.exceptions.ConditionalCheckFailedException:
+            # Either track doesn't exist, or it already has YouTube data
+            pass
+
+        # Try to create a new item (if it doesn't exist)
+        try:
+            item = {
+                'track_id': track_id,
+                'created_at': timestamp,
+                'updated_at': timestamp,
+                'title': title,
+                'artist': artist,
+                'youtube_video_id': youtube_data['videoId'],
+                'youtube_url': youtube_data['url'],
+                'source': 'ytmusic'
+            }
+
+            table.put_item(
+                Item=item,
+                ConditionExpression="attribute_not_exists(track_id)"
+            )
+            print(f"Created new track with provided ID: {track_id[:8]}...")
+            return True
+        except dynamodb.meta.client.exceptions.ConditionalCheckFailedException:
+            # Track already exists and likely already has YouTube data
+            print(f"Track {track_id[:8]}... already exists with YouTube data")
+            return True
+
+    except Exception as e:
+        print(f"Error creating/updating track with ID {track_id[:8]}...: {str(e)}")
+        return False
 
 def check_track_exists(title, artist):
     """Check if a track already exists by generating its hash-based ID and looking it up directly"""
