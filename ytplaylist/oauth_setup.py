@@ -21,7 +21,8 @@ def main():
 
     # Load client secrets from SSM Parameter Store
     try:
-        ssm_manager = SSMCredentialsManager()
+        # Use /youtube prefix to match what the main app expects
+        ssm_manager = SSMCredentialsManager(ssm_prefix="/youtube")
         if not ssm_manager.test_connection():
             print("✗ Cannot connect to SSM Parameter Store or parameters don't exist")
             print("Please run bin/setup-ssm-parameters.sh first to store Google OAuth credentials")

@@ -6,7 +6,7 @@
 set -e
 
 CLIENT_SECRET_FILE="ytplaylist/client_secret.json"
-SSM_PREFIX="/charts-vibe"
+SSM_PREFIX="/youtube"  # Changed to match what ytplaylist app expects
 
 # Check if client_secret.json exists
 if [ ! -f "$CLIENT_SECRET_FILE" ]; then
@@ -92,6 +92,22 @@ aws ssm put-parameter \
     --description "OAuth2 Redirect URIs (comma-separated)" \
     --overwrite || echo "Warning: Failed to store redirect_uris"
 
+# Add placeholder parameters for OAuth tokens (will be set by oauth_setup.py)
+echo "Creating placeholder parameters for OAuth tokens..."
+aws ssm put-parameter \
+    --name "${SSM_PREFIX}/access_token" \
+    --value "NOT_SET" \
+    --type "SecureString" \
+    --description "YouTube OAuth2 Access Token (set by oauth_setup.py)" \
+    --overwrite || echo "Warning: Failed to create access_token placeholder"
+
+aws ssm put-parameter \
+    --name "${SSM_PREFIX}/refresh_token" \
+    --value "NOT_SET" \
+    --type "SecureString" \
+    --description "YouTube OAuth2 Refresh Token (set by oauth_setup.py)" \
+    --overwrite || echo "Warning: Failed to create refresh_token placeholder"
+
 echo "✅ All parameters have been stored in SSM Parameter Store"
 echo ""
 echo "Parameters created:"
@@ -102,8 +118,11 @@ echo "- ${SSM_PREFIX}/auth_uri (String)"
 echo "- ${SSM_PREFIX}/token_uri (String)"
 echo "- ${SSM_PREFIX}/auth_provider_x509_cert_url (String)"
 echo "- ${SSM_PREFIX}/redirect_uris (String)"
+echo "- ${SSM_PREFIX}/access_token (SecureString) - placeholder, run oauth_setup.py to set real tokens"
+echo "- ${SSM_PREFIX}/refresh_token (SecureString) - placeholder, run oauth_setup.py to set real tokens"
 echo ""
 echo "⚠️  IMPORTANT: Now you should:"
-echo "1. Update your application code to read from SSM instead of the JSON file"
-echo "2. Run the cleanup script to securely remove the client_secret.json file"
-echo "3. Add ytplaylist/client_secret.json to .gitignore if not already present"
+echo "1. Run 'python ytplaylist/oauth_setup.py' to complete OAuth flow and set real tokens"
+echo "2. Update your application code to read from SSM instead of the JSON file"
+echo "3. Run the cleanup script to securely remove the client_secret.json file"
+echo "4. Add ytplaylist/client_secret.json to .gitignore if not already present"

@@ -1,0 +1,5 @@
+[copilot] Fixed JSON serialization error for Decimal objects in EventBridge events
+[copilot] Modified ytmusic service to use track_id from SNS messages for consistency
+[copilot] Optimized DynamoDB operations to use conditional put/update to minimize API charges
+[copilot] Fixed YouTube OAuth credentials to include refresh_token for automatic token renewal
+[copilot] Fixed SSM parameter setup scripts to use consistent /youtube prefix and create OAuth token placeholders

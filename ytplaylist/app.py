@@ -275,24 +275,32 @@ def get_youtube_service():
             return None
 
         # Try to get existing tokens from environment or Parameter Store
-        access_token = os.environ.get('YOUTUBE_ACCESS_TOKEN')
-        if not access_token:
-            # Try Parameter Store as fallback
-            try:
-                oauth_tokens = get_oauth_tokens_from_store()
-                if oauth_tokens:
-                    access_token = oauth_tokens.get('access_token')
-            except:
-                pass
+        oauth_tokens = get_oauth_tokens_from_store()
+        if not oauth_tokens:
+            print("No OAuth tokens found in Parameter Store")
+            return None
+
+        access_token = oauth_tokens.get('access_token')
+        refresh_token = oauth_tokens.get('refresh_token')
+
+        # Check if tokens are still placeholder values
+        if access_token == "NOT_SET":
+            print("OAuth tokens are not configured. Please run 'python ytplaylist/oauth_setup.py' to complete OAuth flow.")
+            return None
+
+        print(f"Found access_token: {'Yes' if access_token else 'No'}")
+        print(f"Found refresh_token: {'Yes' if refresh_token else 'No'}")
 
         if access_token:
             credentials = Credentials(
                 token=access_token,
+                refresh_token=refresh_token,  # Include refresh token for automatic renewal
                 token_uri=client_secrets['token_uri'],
                 client_id=client_secrets['client_id'],
                 client_secret=client_secrets['client_secret']
             )
 
+            print("Creating YouTube service with credentials")
             youtube = build('youtube', 'v3', credentials=credentials)
             return youtube
 
@@ -319,7 +327,9 @@ def get_oauth_tokens_from_store():
                 response = ssm.get_parameter(Name=param_name, WithDecryption=True)
                 key = param_name.split('/')[-1]
                 tokens[key] = response['Parameter']['Value']
+                print(f"Successfully retrieved {key} from Parameter Store")
             except ssm.exceptions.ParameterNotFound:
+                print(f"Parameter {param_name} not found in Parameter Store")
                 if 'access_token' in param_name:
                     return None  # Access token is required
 
@@ -332,7 +342,8 @@ def get_oauth_tokens_from_store():
 def load_client_secrets_from_ssm():
     """Load client secrets from SSM Parameter Store"""
     try:
-        ssm_manager = SSMCredentialsManager()
+        # Use /youtube prefix to match the setup script and app expectations
+        ssm_manager = SSMCredentialsManager(ssm_prefix="/youtube")
         config = ssm_manager.get_google_oauth_config()
         return config['installed']
     except Exception as e:
