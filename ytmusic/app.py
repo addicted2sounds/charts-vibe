@@ -7,7 +7,23 @@ import uuid
 import hashlib
 import re
 from datetime import datetime
+from decimal import Decimal
 from utils import generate_track_id, check_track_exists_by_id
+
+def decimal_to_serializable(obj):
+    """Convert Decimal objects to JSON-serializable types"""
+    if isinstance(obj, Decimal):
+        # Convert to int if it's a whole number, otherwise to float
+        if obj % 1 == 0:
+            return int(obj)
+        else:
+            return float(obj)
+    elif isinstance(obj, dict):
+        return {key: decimal_to_serializable(value) for key, value in obj.items()}
+    elif isinstance(obj, list):
+        return [decimal_to_serializable(item) for item in obj]
+    else:
+        return obj
 
 def lambda_handler(event, context):
     """
@@ -47,11 +63,11 @@ def handle_sqs_events(event, context):
 
                         # Process the track using existing logic
                         result = process_track_search(title, artist)
-                        
+
                         # Update job counter if successful processing and job_id exists
                         if result and job_id:
                             update_job_counter(job_id)
-                        
+
                         results.append({
                             'track': f"{title} - {artist}",
                             'job_id': job_id,
@@ -297,7 +313,7 @@ def update_job_counter(job_id):
         dynamodb = boto3.resource('dynamodb')
         table_name = os.environ.get('JOBS_TABLE', 'jobs')
         table = dynamodb.Table(table_name)
-        
+
         # Atomically increment processed_count
         response = table.update_item(
             Key={'job_id': job_id},
@@ -308,18 +324,18 @@ def update_job_counter(job_id):
             },
             ReturnValues='ALL_NEW'
         )
-        
+
         # Check if job is completed
         updated_item = response['Attributes']
         processed_count = updated_item.get('processed_count', 0)
         expected_count = updated_item.get('expected_count', 0)
-        
+
         print(f"Job {job_id}: processed {processed_count}/{expected_count}")
-        
+
         if processed_count >= expected_count:
             # Mark job as completed and trigger playlist creation
             complete_job(job_id, updated_item)
-            
+
     except Exception as e:
         print(f"Error updating job counter: {str(e)}")
 
@@ -327,9 +343,9 @@ def complete_job(job_id, job_data):
     """Mark job as completed and trigger playlist creation event"""
     try:
         dynamodb = boto3.resource('dynamodb')
-        table_name = os.environ.get('JOBS_TABLE', 'jobs') 
+        table_name = os.environ.get('JOBS_TABLE', 'jobs')
         table = dynamodb.Table(table_name)
-        
+
         # Update job status to completed
         table.update_item(
             Key={'job_id': job_id},
@@ -342,11 +358,11 @@ def complete_job(job_id, job_data):
                 ':timestamp': datetime.utcnow().isoformat()
             }
         )
-        
+
         # Send JobCompleted event to EventBridge
         send_job_completed_event(job_id, job_data)
         print(f"Job {job_id} marked as completed and event sent")
-        
+
     except Exception as e:
         print(f"Error completing job: {str(e)}")
 
@@ -355,24 +371,27 @@ def send_job_completed_event(job_id, job_data):
     try:
         events_client = boto3.client('events')
         event_bus_name = os.environ.get('EVENT_BUS_NAME', 'default')
-        
+
+        # Convert Decimal objects to JSON-serializable types
+        serializable_job_data = decimal_to_serializable(job_data)
+
         # Create event detail
         detail = {
             'job_id': job_id,
-            'source_file': job_data.get('source_file'),
-            'expected_count': job_data.get('expected_count'),
-            'processed_count': job_data.get('processed_count'),
-            'created_at': job_data.get('created_at'),
+            'source_file': serializable_job_data.get('source_file'),
+            'expected_count': serializable_job_data.get('expected_count'),
+            'processed_count': serializable_job_data.get('processed_count'),
+            'created_at': serializable_job_data.get('created_at'),
             'completed_at': datetime.utcnow().isoformat()
         }
-        
+
         # Extract S3 info for playlist creation
-        source_file = job_data.get('source_file', '')
+        source_file = serializable_job_data.get('source_file', '')
         if source_file:
             # Assuming format like "beatport/2024/07/30/top100-120000.json"
             detail['s3_bucket'] = os.environ.get('PLAYLISTS_BUCKET')
             detail['s3_key'] = source_file
-        
+
         # Send event
         response = events_client.put_events(
             Entries=[
@@ -384,9 +403,9 @@ def send_job_completed_event(job_id, job_data):
                 }
             ]
         )
-        
+
         print(f"Sent JobCompleted event for job {job_id}: {response}")
-        
+
     except Exception as e:
         print(f"Error sending job completed event: {str(e)}")
 

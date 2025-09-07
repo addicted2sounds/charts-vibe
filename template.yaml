@@ -417,11 +417,15 @@ Resources:
         - SSMParameterReadPolicy:
             ParameterName: /youtube/*
       Events:
-        CreatePlaylist:
-          Type: Api
+        JobCompletedEvent:
+          Type: EventBridgeRule
           Properties:
-            Path: /playlists
-            Method: post
+            EventBusName: default
+            Pattern:
+              source:
+                - "music-search.orchestrator"
+              detail-type:
+                - "Job Completed"
     DependsOn: YoutubePlaylistFunctionLogGroup
 
   # EventBridge rule for auto-starting playlist creation after job completion
