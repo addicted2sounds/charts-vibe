@@ -116,13 +116,6 @@ Resources:
       KeySchema:
         - AttributeName: track_id
           KeyType: HASH
-      GlobalSecondaryIndexes:
-        - IndexName: created-at-index
-          KeySchema:
-            - AttributeName: created_at
-              KeyType: HASH
-          Projection:
-            ProjectionType: ALL
 
   # DynamoDB Table for storing playlists
   PlaylistsTable:
