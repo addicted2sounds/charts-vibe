@@ -111,8 +111,6 @@ Resources:
       AttributeDefinitions:
         - AttributeName: track_id
           AttributeType: S
-        - AttributeName: created_at
-          AttributeType: S
       KeySchema:
         - AttributeName: track_id
           KeyType: HASH

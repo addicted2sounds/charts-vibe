@@ -20,14 +20,34 @@ AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
 echo "Deploying to AWS Account: $AWS_ACCOUNT_ID"
 echo "AWS Region: $AWS_REGION"
 
+if [ -z "$AWS_REGION" ]; then
+    echo "Error: AWS region is not configured. Please set it with 'aws configure set region <region-name>'"
+    exit 1
+fi
+
 # Ensure we're in the project root
 cd "$(dirname "$0")/.."
+
+# Ensure we have an S3 bucket for SAM artifacts. Allow override via SAM_ARTIFACT_BUCKET.
+SAM_ARTIFACT_BUCKET=${SAM_ARTIFACT_BUCKET:-charts-vibe-sam-artifacts-$AWS_ACCOUNT_ID-$AWS_REGION}
+echo "Using SAM artifact bucket: $SAM_ARTIFACT_BUCKET"
+
+if ! aws s3api head-bucket --bucket "$SAM_ARTIFACT_BUCKET" 2>/dev/null; then
+    echo "Artifact bucket does not exist. Creating s3://$SAM_ARTIFACT_BUCKET ..."
+    if [ "$AWS_REGION" = "us-east-1" ]; then
+        aws s3api create-bucket --bucket "$SAM_ARTIFACT_BUCKET"
+    else
+        aws s3api create-bucket \
+            --bucket "$SAM_ARTIFACT_BUCKET" \
+            --create-bucket-configuration LocationConstraint="$AWS_REGION"
+    fi
+fi
 
 echo "########### Building SAM application ###########"
 sam build
 
 echo "########### Deploying to AWS ###########"
-sam deploy --config-env default
+sam deploy --config-env default --s3-bucket "$SAM_ARTIFACT_BUCKET"
 
 echo "########### Getting stack outputs ###########"
 STACK_NAME="charts-vibe"
