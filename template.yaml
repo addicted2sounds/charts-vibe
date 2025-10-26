@@ -314,7 +314,6 @@ Resources:
       Handler: app.lambda_handler
       Runtime: python3.11
       Timeout: 60
-      ReservedConcurrentExecutions: 2   # стримує квоти YouTube і витрати
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !If
