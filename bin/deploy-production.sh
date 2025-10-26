@@ -28,6 +28,11 @@ fi
 # Ensure we're in the project root
 cd "$(dirname "$0")/.."
 
+# Table names (override with env vars if needed)
+TRACKS_TABLE_NAME=${TRACKS_TABLE_NAME:-charts-vibe-tracks}
+PLAYLISTS_TABLE_NAME=${PLAYLISTS_TABLE_NAME:-charts-vibe-playlists}
+JOBS_TABLE_NAME=${JOBS_TABLE_NAME:-charts-vibe-jobs}
+
 # Ensure we have an S3 bucket for SAM artifacts. Allow override via SAM_ARTIFACT_BUCKET.
 SAM_ARTIFACT_BUCKET=${SAM_ARTIFACT_BUCKET:-charts-vibe-sam-artifacts-$AWS_ACCOUNT_ID-$AWS_REGION}
 echo "Using SAM artifact bucket: $SAM_ARTIFACT_BUCKET"
@@ -43,24 +48,35 @@ if ! aws s3api head-bucket --bucket "$SAM_ARTIFACT_BUCKET" 2>/dev/null; then
     fi
 fi
 
-# Check if tables exist and set parameters accordingly
-TABLES_EXIST=$(aws dynamodb list-tables --endpoint-url=http://localhost:4566 --region us-east-1 --query 'TableNames[?contains(@, `charts-vibe-jobs`)]' --output text 2>/dev/null)
+# Determine if DynamoDB tables already exist
+CREATE_TABLES=true
+if aws dynamodb describe-table --table-name "$TRACKS_TABLE_NAME" --region "$AWS_REGION" >/dev/null 2>&1 \
+   && aws dynamodb describe-table --table-name "$PLAYLISTS_TABLE_NAME" --region "$AWS_REGION" >/dev/null 2>&1 \
+   && aws dynamodb describe-table --table-name "$JOBS_TABLE_NAME" --region "$AWS_REGION" >/dev/null 2>&1; then
+    CREATE_TABLES=false
+fi
 
-if [ ! -z "$TABLES_EXIST" ]; then
-    echo "Tables exist, using existing tables..."
-    CREATE_TABLES="false"
+echo "DynamoDB tables check:"
+if [ "$CREATE_TABLES" = true ]; then
+    echo "  Tables missing - will create new DynamoDB tables."
 else
-    echo "Tables don't exist, creating new ones..."
-    CREATE_TABLES="true"
+    echo "  Existing tables detected - reusing $TRACKS_TABLE_NAME, $PLAYLISTS_TABLE_NAME, $JOBS_TABLE_NAME."
 fi
 
 echo "########### Building SAM application ###########"
 sam build
 
 echo "########### Deploying to AWS ###########"
-sam deploy --config-env default --s3-bucket "$SAM_ARTIFACT_BUCKET" \
+sam deploy \
+    --config-env default \
+    --s3-bucket "$SAM_ARTIFACT_BUCKET" \
     --capabilities CAPABILITY_IAM \
-    --parameter-overrides Environment=production CreateTables=$CREATE_TABLES
+    --parameter-overrides \
+        Environment=production \
+        CreateTables=$CREATE_TABLES \
+        ExistingTracksTableName=$TRACKS_TABLE_NAME \
+        ExistingPlaylistsTableName=$PLAYLISTS_TABLE_NAME \
+        ExistingJobsTableName=$JOBS_TABLE_NAME
 
 echo "########### Getting stack outputs ###########"
 STACK_NAME="charts-vibe"
