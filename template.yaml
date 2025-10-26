@@ -161,6 +161,8 @@ Resources:
   # S3 Bucket for storing scraped playlist
   PlaylistsBucket:
     Type: AWS::S3::Bucket
+    DependsOn:
+      - S3FileUploadQueuePolicy
     Properties:
       BucketName: !Sub "${AWS::StackName}-playlists"
       VersioningConfiguration:
@@ -216,6 +218,9 @@ Resources:
               Service: s3.amazonaws.com
             Action: sqs:SendMessage
             Resource: !GetAtt S3FileUploadQueue.Arn
+            Condition:
+              ArnEquals:
+                aws:SourceArn: !Sub "arn:aws:s3:::${AWS::StackName}-playlists"
             Condition:
               ArnEquals:
                 aws:SourceArn: !GetAtt PlaylistsBucket.Arn
