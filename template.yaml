@@ -193,7 +193,7 @@ Resources:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: !Sub "${AWS::StackName}-s3-upload-events"
-      VisibilityTimeout: 180
+      VisibilityTimeout: 300
       MessageRetentionPeriod: 1209600  # 14 days
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt S3FileUploadDLQ.Arn
@@ -234,7 +234,7 @@ Resources:
     Type: AWS::SQS::Queue
     Properties:
       QueueName: !Sub "${AWS::StackName}-youtube-music-processing"
-      VisibilityTimeout: 180
+      VisibilityTimeout: 300
       MessageRetentionPeriod: 1209600  # 14 days
       RedrivePolicy:
         deadLetterTargetArn: !GetAtt YouTubeMusicProcessingDLQ.Arn
