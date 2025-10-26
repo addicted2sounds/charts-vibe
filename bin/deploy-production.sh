@@ -43,11 +43,24 @@ if ! aws s3api head-bucket --bucket "$SAM_ARTIFACT_BUCKET" 2>/dev/null; then
     fi
 fi
 
+# Check if tables exist and set parameters accordingly
+TABLES_EXIST=$(aws dynamodb list-tables --endpoint-url=http://localhost:4566 --region us-east-1 --query 'TableNames[?contains(@, `charts-vibe-jobs`)]' --output text 2>/dev/null)
+
+if [ ! -z "$TABLES_EXIST" ]; then
+    echo "Tables exist, using existing tables..."
+    CREATE_TABLES="false"
+else
+    echo "Tables don't exist, creating new ones..."
+    CREATE_TABLES="true"
+fi
+
 echo "########### Building SAM application ###########"
 sam build
 
 echo "########### Deploying to AWS ###########"
-sam deploy --config-env default --s3-bucket "$SAM_ARTIFACT_BUCKET"
+sam deploy --config-env default --s3-bucket "$SAM_ARTIFACT_BUCKET" \
+    --capabilities CAPABILITY_IAM \
+    --parameter-overrides Environment=production CreateTables=$CREATE_TABLES
 
 echo "########### Getting stack outputs ###########"
 STACK_NAME="charts-vibe"

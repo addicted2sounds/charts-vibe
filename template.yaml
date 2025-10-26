@@ -221,9 +221,6 @@ Resources:
             Condition:
               ArnEquals:
                 aws:SourceArn: !Sub "arn:aws:s3:::${AWS::StackName}-playlists"
-            Condition:
-              ArnEquals:
-                aws:SourceArn: !GetAtt PlaylistsBucket.Arn
 
   # SNS Topic for new tracks queue
   NewTracksQueue:
@@ -362,7 +359,7 @@ Resources:
       Timeout: 60
       Policies:
         - S3CrudPolicy:
-            BucketName: !Ref PlaylistsBucket
+            BucketName: !Sub "${AWS::StackName}-playlists"
       Environment:
         Variables:
           PLAYLISTS_BUCKET: !Sub "${AWS::StackName}-playlists"
