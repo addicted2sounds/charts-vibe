@@ -4,12 +4,24 @@ import os
 import sys
 from datetime import datetime
 import uuid
+from decimal import Decimal
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from ssm_credentials import SSMCredentialsManager
+
+
+def to_serializable(value):
+    """Convert Decimal values from DynamoDB into JSON-serializable native types."""
+    if isinstance(value, Decimal):
+        return int(value) if value % 1 == 0 else float(value)
+    if isinstance(value, dict):
+        return {k: to_serializable(v) for k, v in value.items()}
+    if isinstance(value, list):
+        return [to_serializable(item) for item in value]
+    return value
 
 def lambda_handler(event, context):
     """
@@ -195,12 +207,15 @@ def handle_s3_playlist_creation(event, s3_bucket, s3_key):
         print(f"Found {len(tracks)} tracks in playlist: {playlist_name}")
 
         # Get enriched track data with YouTube video IDs from DynamoDB
-        enriched_tracks, video_ids = get_enriched_tracks_from_dynamodb(tracks)
+        enriched_tracks, video_ids, skipped_tracks = get_enriched_tracks_from_dynamodb(tracks)
 
         if not video_ids:
             return {
                 'statusCode': 400,
-                'body': json.dumps({'error': 'No tracks with YouTube video IDs found in database'})
+                'body': json.dumps({
+                    'error': 'No tracks with YouTube video IDs found in database',
+                    'skipped_tracks': skipped_tracks
+                })
             }
 
         print(f"Found {len(video_ids)} tracks with YouTube video IDs")
@@ -244,7 +259,8 @@ def handle_s3_playlist_creation(event, s3_bucket, s3_key):
                 'tracks_with_video_ids': len(video_ids),
                 'videos_added_successfully': added_videos,
                 'failed_videos': failed_videos,
-                'enriched_tracks': enriched_tracks  # Include enriched track data for reference
+                'enriched_tracks': enriched_tracks,  # Include enriched track data for reference
+                'skipped_tracks': skipped_tracks
             })
         }
 
@@ -539,19 +555,28 @@ def get_enriched_tracks_from_dynamodb(tracks):
 
         enriched_tracks = []
         video_ids = []
+        skipped_tracks = []
 
         for track in tracks:
             try:
-                title = track.get('title', '').strip()
-                artist = track.get('artist', '').strip()
-                track_id = track.get('track_id', '').strip()
+                title = (track.get('title') or '').strip()
+                artist = (track.get('artist') or '').strip()
+                track_id = (track.get('track_id') or '').strip()
 
                 if not title or not artist:
                     print(f"Skipping track with missing title or artist: {track}")
+                    skipped_tracks.append({
+                        'track': to_serializable(track),
+                        'reason': 'missing title or artist'
+                    })
                     continue
 
                 if not track_id:
                     print(f"Skipping track with missing track_id: {title} - {artist}")
+                    skipped_tracks.append({
+                        'track': to_serializable(track),
+                        'reason': 'missing track_id'
+                    })
                     continue
 
                 # Query DynamoDB for the track using the track_id from playlist JSON
@@ -564,8 +589,8 @@ def get_enriched_tracks_from_dynamodb(tracks):
                     if youtube_video_id:
                         # Track found with YouTube video ID
                         enriched_track = {
-                            'source_track': track,  # Original track from playlist
-                            'db_track': dict(db_track),  # Track from database (convert from DynamoDB item)
+                            'source_track': to_serializable(track),  # Original track from playlist
+                            'db_track': to_serializable(dict(db_track)),  # Convert DynamoDB item to JSON-safe dict
                             'title': title,
                             'artist': artist,
                             'track_id': track_id,
@@ -577,19 +602,31 @@ def get_enriched_tracks_from_dynamodb(tracks):
                         print(f"Found YouTube video ID for: {title} - {artist} (ID: {track_id[:8]}...) -> {youtube_video_id}")
                     else:
                         print(f"Track found in DB but no YouTube video ID: {title} - {artist} (ID: {track_id[:8]}...)")
+                        skipped_tracks.append({
+                            'track': to_serializable(track),
+                            'reason': 'youtube_video_id missing in database'
+                        })
                 else:
                     print(f"Track not found in database: {title} - {artist} (ID: {track_id[:8]}...)")
+                    skipped_tracks.append({
+                        'track': to_serializable(track),
+                        'reason': 'track not found in database'
+                    })
 
             except Exception as e:
                 print(f"Error processing track {track}: {str(e)}")
+                skipped_tracks.append({
+                    'track': to_serializable(track),
+                    'reason': f'error fetching from database: {str(e)}'
+                })
                 continue
 
         print(f"Enriched {len(enriched_tracks)} tracks with YouTube video IDs out of {len(tracks)} source tracks")
-        return enriched_tracks, video_ids
+        return enriched_tracks, video_ids, skipped_tracks
 
     except Exception as e:
         print(f"Error enriching tracks from DynamoDB: {str(e)}")
-        return [], []
+        return [], [], [{'track': to_serializable(track), 'reason': 'unexpected error during enrichment'} for track in tracks]
 
 # Test function
 if __name__ == "__main__":
