@@ -44,10 +44,10 @@ def lambda_handler(event, context):
 
     2. Direct API call with S3 data:
     {
-        "s3_bucket": "charts-bucket",
-        "s3_key": "beatport/2024/07/30/top100-120000.json",
-        "playlist_name": "Optional custom name (defaults to playlist name from S3 data)",
-        "description": "Optional description"
+        "s3_bucket": "charts-vibe-playlists",
+        "s3_key": "beatport/2025/10/27/top100-060056.json",
+        "playlist_name": "Beatport Top 100",
+        "description": "2025/10/27 Beatport Top 100 Playlist"
     }
 
     3. Legacy direct video IDs format:

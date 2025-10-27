@@ -408,7 +408,7 @@ Resources:
         - S3ReadPolicy:
             BucketName: !Sub "${AWS::StackName}-playlists"
         - SSMParameterReadPolicy:
-            ParameterName: /youtube/*
+            ParameterName: youtube/*
       Events:
         JobCompletedEvent:
           Type: EventBridgeRule
