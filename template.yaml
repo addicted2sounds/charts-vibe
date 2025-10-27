@@ -339,6 +339,7 @@ Resources:
             - !Ref ExistingJobsTableName
           EVENT_BUS_NAME: default
           PLAYLISTS_BUCKET: !Sub "${AWS::StackName}-playlists"
+          YOUTUBE_MUSIC_DLQ_URL: !Ref YouTubeMusicProcessingDLQ
       Events:
         SQSEvent:
           Type: SQS

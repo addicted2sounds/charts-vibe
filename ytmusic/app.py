@@ -10,6 +10,11 @@ from datetime import datetime
 from decimal import Decimal
 from utils import generate_track_id, check_track_exists_by_id
 
+
+class TrackNotFoundError(Exception):
+    """Raised when a track cannot be located on YouTube Music."""
+    pass
+
 def decimal_to_serializable(obj):
     """Convert Decimal objects to JSON-serializable types"""
     if isinstance(obj, Decimal):
@@ -62,20 +67,35 @@ def handle_sqs_events(event, context):
                     if title and artist:
                         print(f"Processing track from SQS: {title} - {artist} (Job: {job_id}, Track ID: {track_id[:8] if track_id else 'None'}...)")
 
-                        # Process the track using existing logic, passing the track_id from SNS
-                        result = process_track_search(title, artist, track_id)
+                        status = 'failed'
+                        result = None
+                        error_message = None
 
-                        # Update job counter if successful processing and job_id exists
-                        if result and job_id:
+                        try:
+                            result = process_track_search(title, artist, track_id)
+                            if result:
+                                status = 'success'
+                        except TrackNotFoundError as not_found_error:
+                            status = 'not_found'
+                            error_message = str(not_found_error)
+                            send_track_to_dlq(track_data, job_id, error_message)
+
+                        if job_id and status in ('success', 'not_found'):
                             update_job_counter(job_id)
 
-                        results.append({
+                        result_entry = {
                             'track': f"{title} - {artist}",
                             'job_id': job_id,
                             'track_id': track_id,
-                            'status': 'success' if result else 'failed',
-                            'result': result
-                        })
+                            'status': status
+                        }
+
+                        if status == 'success':
+                            result_entry['result'] = result
+                        else:
+                            result_entry['error'] = error_message or 'processing failed'
+
+                        results.append(result_entry)
                     else:
                         print(f"Invalid track data in SQS message: missing title or artist")
                         results.append({
@@ -116,15 +136,44 @@ def handle_direct_request(event, context):
     if not title or not author:
         return {"statusCode": 400, "body": "Missing title or author"}
 
-    result = process_track_search(title, author, track_id)
-
-    if not result:
+    try:
+        result = process_track_search(title, author, track_id)
+    except TrackNotFoundError:
         return {"statusCode": 404, "body": "Track not found"}
 
     return {
         "statusCode": 200,
         "body": result
     }
+
+
+def send_track_to_dlq(track_data, job_id, reason):
+    """Send not-found tracks to the configured dead-letter queue."""
+    queue_url = os.environ.get('YOUTUBE_MUSIC_DLQ_URL')
+
+    if not queue_url:
+        print(f"DLQ URL not configured; skipping DLQ send for track {track_data.get('track_id', 'unknown') if isinstance(track_data, dict) else 'unknown'}")
+        return
+
+    payload = {
+        'track': track_data,
+        'job_id': job_id,
+        'failure_reason': reason,
+        'timestamp': datetime.utcnow().isoformat()
+    }
+
+    try:
+        sqs = boto3.client('sqs')
+        sqs.send_message(
+            QueueUrl=queue_url,
+            MessageBody=json.dumps(decimal_to_serializable(payload))
+        )
+        track_id = ''
+        if isinstance(track_data, dict):
+            track_id = track_data.get('track_id') or ''
+        print(f"Sent track {track_id[:8] if track_id else 'unknown'}... to DLQ: {reason}")
+    except Exception as e:
+        print(f"Failed to send track to DLQ: {str(e)}")
 
 def process_track_search(title, artist, track_id=None):
     """
@@ -141,8 +190,9 @@ def process_track_search(title, artist, track_id=None):
         results = ytmusic.search(query=f"{title} {artist}", filter="songs")
 
         if not results:
-            print(f"No YouTube results found for: {title} - {artist}")
-            return None
+            message = f"No YouTube results found for: {title} - {artist}"
+            print(message)
+            raise TrackNotFoundError(message)
 
         track = results[0]
         youtube_data = {
@@ -200,6 +250,8 @@ def process_track_search(title, artist, track_id=None):
 
         return response_body
 
+    except TrackNotFoundError:
+        raise
     except Exception as e:
         print(f"Error in process_track_search: {str(e)}")
         return None
