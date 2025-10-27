@@ -388,7 +388,7 @@ Resources:
       CodeUri: ytplaylist
       Handler: app.lambda_handler
       Runtime: python3.11
-      Timeout: 60
+      Timeout: 900
       Policies:
         - DynamoDBCrudPolicy:
             TableName: !If
