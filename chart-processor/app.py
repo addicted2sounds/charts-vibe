@@ -280,7 +280,7 @@ def publish_tracks_to_sns(tracks, source_file, job_id=None):
                 response = sns_client.publish(
                     TopicArn=topic_arn,
                     Message=json.dumps(message),
-                    Subject=f"New track: {track.get('title', 'Unknown')} - {track.get('artist', 'Unknown')}",
+                    Subject=f"New track: {track.get('title', 'Unknown')} - {track.get('artist', 'Unknown')}"[:100].strip(),
                     MessageAttributes={
                         'source_file': {
                             'DataType': 'String',
