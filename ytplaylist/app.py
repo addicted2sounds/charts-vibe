@@ -101,7 +101,7 @@ def handle_job_completed_event(event):
         print(f"Creating playlist for completed job {job_id} from s3://{s3_bucket}/{s3_key}")
 
         # Create playlist name based on source file and job completion
-        playlist_name = f"Auto Playlist - {s3_key.split('/')[-1].replace('.json', '')} - {datetime.utcnow().strftime('%Y-%m-%d')}"
+        playlist_name = f"Beatport Top 100 ({datetime.utcnow().strftime('%Y-%m-%d')})"
         description = f"Automatically created playlist from job {job_id} completed on {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}. Source: {s3_key}"
 
         # Use the same S3-based playlist creation logic
