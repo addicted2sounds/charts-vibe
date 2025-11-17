@@ -5,6 +5,7 @@
 
 set -e  # Exit on error
 
+export AWS_PROFILE="charts-vibe-deploy"  # Set the AWS profile
 echo "########### Charts-vibe Production Deployment ###########"
 
 # Check if AWS CLI is configured
