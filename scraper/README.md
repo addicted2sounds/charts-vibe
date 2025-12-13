@@ -97,7 +97,7 @@ cd scraper
 pip install -r requirements.txt
 
 # Test basic scraping functionality
-python app.py
+python beatport.py
 
 # Test S3 storage functionality (requires AWS credentials)
 python test_s3_storage.py

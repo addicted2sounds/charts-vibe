@@ -3,7 +3,12 @@ Common utilities for music search project
 """
 
 import hashlib
+import json
+import os
 import re
+from datetime import datetime, timezone
+
+import boto3
 
 
 def generate_track_id(title, artist):
@@ -38,6 +43,54 @@ def generate_track_id(title, artist):
     # Generate SHA-256 hash
     hash_obj = hashlib.sha256(combined.encode('utf-8'))
     return hash_obj.hexdigest()
+
+
+def store_playlist_in_s3(
+    playlist_data,
+    source_prefix,
+    filename_prefix,
+    metadata_source,
+    playlist_type
+):
+    """
+    Store playlist data in S3 under the provided prefix and filename stub.
+
+    Returns an S3 location dict or None if storage fails.
+    """
+    try:
+        s3_client = boto3.client('s3')
+        bucket_name = os.environ.get('PLAYLISTS_BUCKET')
+
+        if not bucket_name:
+            print("No S3 bucket configured for playlists")
+            return None
+
+        now = datetime.now(timezone.utc)
+        date_path = now.strftime('%Y/%m/%d')
+        time_suffix = now.strftime('%H%M%S')
+        s3_key = f"{source_prefix}/{date_path}/{filename_prefix}-{time_suffix}.json"
+
+        s3_client.put_object(
+            Bucket=bucket_name,
+            Key=s3_key,
+            Body=json.dumps(playlist_data, indent=2, default=str),
+            ContentType='application/json',
+            Metadata={
+                'source': metadata_source,
+                'playlist-type': playlist_type,
+                'scraped-at': now.isoformat()
+            }
+        )
+
+        return {
+            'bucket': bucket_name,
+            'key': s3_key,
+            'url': f"s3://{bucket_name}/{s3_key}"
+        }
+
+    except Exception as e:
+        print(f"Error storing playlist in S3: {str(e)}")
+        return None
 
 
 def normalize_track_data(track):
@@ -94,23 +147,4 @@ def normalize_track_data(track):
 
     except Exception as e:
         print(f"Error normalizing track data: {str(e)}")
-        return None
-
-
-def check_track_exists_by_id(track_id, dynamodb_table):
-    """
-    Check if a track exists by its generated ID (direct lookup)
-
-    Args:
-        track_id (str): The generated track ID
-        dynamodb_table: DynamoDB table resource
-
-    Returns:
-        dict: Track item if exists, None otherwise
-    """
-    try:
-        response = dynamodb_table.get_item(Key={'track_id': track_id})
-        return response.get('Item')
-    except Exception as e:
-        print(f"Error checking track existence by ID {track_id}: {str(e)}")
         return None

@@ -5,7 +5,8 @@ Test script for S3 playlist storage functionality
 import json
 import os
 from datetime import datetime, timezone
-from app import store_playlist_in_s3
+
+from utils import store_playlist_in_s3
 
 def test_playlist_storage():
     """Test the S3 playlist storage functionality"""
@@ -53,7 +54,13 @@ def test_playlist_storage():
     os.environ['PLAYLISTS_BUCKET'] = 'test-music-search-playlists'
 
     try:
-        result = store_playlist_in_s3(test_playlist_data, test_playlist_data['playlist_id'])
+        result = store_playlist_in_s3(
+            test_playlist_data,
+            source_prefix="beatport",
+            filename_prefix="top100",
+            metadata_source="beatport-scraper",
+            playlist_type="top-100"
+        )
         if result:
             print(f"✅ Successfully stored playlist in S3: {result}")
         else:

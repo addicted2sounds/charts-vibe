@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-Scraper for Clubtone Top 10 chart.
+Scraper for Clubtone Top 100 chart.
 
-This lambda fetches the Top 10 page, extracts track metadata, and stores a
+This lambda fetches the Top 100 page, extracts track metadata, and stores a
 playlist snapshot in S3 so the rest of the pipeline can discover and process
 new tracks.
 """
@@ -12,17 +12,16 @@ import os
 import re
 from datetime import datetime, timezone
 
-import boto3
 import requests
 from bs4 import BeautifulSoup
 
-from utils import generate_track_id
+from utils import generate_track_id, store_playlist_in_s3
 
 CLUBTONE_TOP100_URL = "https://clubtone.do.am/top_100"
 
 
 def lambda_handler(event, context):
-    """Entrypoint for the Clubtone Top 10 scraper lambda."""
+    """Entrypoint for the Clubtone Top 100 scraper lambda."""
     try:
         target_url = os.environ.get("CLUBTONE_URL", CLUBTONE_TOP100_URL)
 
@@ -64,7 +63,13 @@ def lambda_handler(event, context):
             }
         }
 
-        s3_result = store_playlist_in_s3(playlist_data)
+        s3_result = store_playlist_in_s3(
+            playlist_data,
+            source_prefix="clubtone",
+            filename_prefix="top100",
+            metadata_source="clubtone-scraper",
+            playlist_type="top-100"
+        )
 
         return {
             "statusCode": 200,
@@ -194,44 +199,6 @@ def parse_clubtone_id(element, entry_url=None):
         return match.group(1)
 
     return None
-
-
-def store_playlist_in_s3(playlist_data):
-    """Store playlist data in S3 under the clubtone prefix."""
-    try:
-        bucket_name = os.environ.get("PLAYLISTS_BUCKET")
-        if not bucket_name:
-            print("No S3 bucket configured for playlists")
-            return None
-
-        s3_client = boto3.client("s3")
-
-        now = datetime.now(timezone.utc)
-        date_path = now.strftime("%Y/%m/%d")
-        time_suffix = now.strftime("%H%M%S")
-        s3_key = f"clubtone/{date_path}/top10-{time_suffix}.json"
-
-        s3_client.put_object(
-            Bucket=bucket_name,
-            Key=s3_key,
-            Body=json.dumps(playlist_data, indent=2, default=str),
-            ContentType="application/json",
-            Metadata={
-                "source": "clubtone-scraper",
-                "playlist-type": "top-10",
-                "scraped-at": now.isoformat()
-            }
-        )
-
-        return {
-            "bucket": bucket_name,
-            "key": s3_key,
-            "url": f"s3://{bucket_name}/{s3_key}"
-        }
-
-    except Exception as exc:
-        print(f"Error storing playlist in S3: {exc}")
-        return None
 
 
 if __name__ == "__main__":

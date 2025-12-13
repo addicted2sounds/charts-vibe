@@ -1,51 +1,12 @@
 #!/usr/bin/env python3
 import json
+import re
+from datetime import datetime, timezone
+
 import requests
 from bs4 import BeautifulSoup
-import re
-import boto3
-import os
-from datetime import datetime, timezone
-from utils import generate_track_id
 
-def store_playlist_in_s3(playlist_data, playlist_id):
-    """Store playlist data in S3"""
-    try:
-        s3_client = boto3.client('s3')
-        bucket_name = os.environ.get('PLAYLISTS_BUCKET')
-
-        if not bucket_name:
-            print("No S3 bucket configured for playlists")
-            return None
-
-        # Generate S3 key with new format: beatport/YYYY/MM/DD/top100-HHMMSS.json
-        now = datetime.now(timezone.utc)
-        date_path = now.strftime('%Y/%m/%d')
-        time_suffix = now.strftime('%H%M%S')
-        s3_key = f"beatport/{date_path}/top100-{time_suffix}.json"
-
-        # Upload playlist data to S3
-        s3_client.put_object(
-            Bucket=bucket_name,
-            Key=s3_key,
-            Body=json.dumps(playlist_data, indent=2, default=str),
-            ContentType='application/json',
-            Metadata={
-                'source': 'beatport-scraper',
-                'playlist-type': 'top-100',
-                'scraped-at': datetime.now(timezone.utc).isoformat()
-            }
-        )
-
-        return {
-            'bucket': bucket_name,
-            'key': s3_key,
-            'url': f"s3://{bucket_name}/{s3_key}"
-        }
-
-    except Exception as e:
-        print(f"Error storing playlist in S3: {str(e)}")
-        return None
+from utils import generate_track_id, store_playlist_in_s3
 
 def lambda_handler(event, context):
     """
@@ -121,7 +82,13 @@ def lambda_handler(event, context):
         }
 
         # Store playlist in S3 (commented out for local testing)
-        s3_result = store_playlist_in_s3(playlist_data, playlist_id)
+        s3_result = store_playlist_in_s3(
+            playlist_data,
+            source_prefix="beatport",
+            filename_prefix="top100",
+            metadata_source="beatport-scraper",
+            playlist_type="top-100"
+        )
 
         return {
             "statusCode": 200,
