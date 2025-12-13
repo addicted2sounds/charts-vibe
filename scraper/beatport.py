@@ -121,7 +121,8 @@ def extract_track_data_simple(element, position):
         "bpm": None,
         "key": None,
         "beatport_id": None,
-        "url": None
+        "url": None,
+        "cover_image_url": None
     }
 
     print(f"\n=== TRACK {position} ===")
@@ -211,6 +212,16 @@ def extract_track_data_simple(element, position):
     if key_match:
         track_data["key"] = key_match.group(1)
         print(f"Found key: {track_data['key']}")
+
+    # Look for cover image
+    cover_img = element.find('img')
+    if cover_img:
+        src = cover_img.get('src') or cover_img.get('data-src')
+        if src:
+            if src.startswith('//'):
+                src = f"https:{src}"
+            track_data["cover_image_url"] = src
+            print(f"Found cover image: {src}")
 
     # Generate track ID if we have title and artist
     if track_data.get('title') and track_data.get('artist'):

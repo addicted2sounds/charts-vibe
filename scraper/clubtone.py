@@ -164,8 +164,8 @@ def extract_track_data(element, position):
         "genre": genre_node.get_text(strip=True) if genre_node else None,
         "clubtone_id": clubtone_id,
         "source": "clubtone",
-        "source_url": entry_url,
-        "cover_url": cover_url
+        "url": entry_url,
+        "cover_image_url": cover_url
     }
 
     if title and artist:
