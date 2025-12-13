@@ -470,26 +470,6 @@ Resources:
                 - "Job Completed"
     DependsOn: YoutubePlaylistFunctionLogGroup
 
-  # EventBridge rule for auto-starting playlist creation after job completion
-  JobCompletedRule:
-    Type: AWS::Events::Rule
-    Properties:
-      EventPattern:
-        source: ["music-search.orchestrator"]
-        detail-type: ["Job Completed"]
-      Targets:
-        - Arn: !GetAtt YoutubePlaylistFunction.Arn
-          Id: CreatePlaylistTarget
-
-  # Permission for EventBridge to invoke playlist function
-  PermissionForEventsToInvokePlaylist:
-    Type: AWS::Lambda::Permission
-    Properties:
-      FunctionName: !Ref YoutubePlaylistFunction
-      Action: lambda:InvokeFunction
-      Principal: events.amazonaws.com
-      SourceArn: !GetAtt JobCompletedRule.Arn
-
   # Dead Letter Queue for playlist processing failures
   PlaylistProcessingDLQ:
     Type: AWS::SQS::Queue
