@@ -2,6 +2,8 @@ import json
 import boto3
 import os
 import sys
+import time
+import random
 from datetime import datetime
 import uuid
 from decimal import Decimal
@@ -487,51 +489,120 @@ def create_public_playlist(youtube_service, title, description):
         return None
 
 def add_videos_to_playlist(youtube_service, playlist_id, video_ids):
-    """Add videos to YouTube playlist and return success/failure counts"""
+    """Add videos to YouTube playlist with retries for transient API failures"""
     added_count = 0
     failed_videos = []
+    max_retries = int(os.environ.get('YT_PLAYLIST_MAX_RETRIES', '5'))
+    base_sleep = float(os.environ.get('YT_PLAYLIST_RETRY_BASE_SECONDS', '1'))
+    max_sleep = float(os.environ.get('YT_PLAYLIST_RETRY_MAX_SECONDS', '10'))
 
     for i, video_id in enumerate(video_ids):
-        try:
-            playlist_item_body = {
-                'snippet': {
-                    'playlistId': playlist_id,
-                    'position': i,  # Maintain order
-                    'resourceId': {
-                        'kind': 'youtube#video',
-                        'videoId': video_id
+        attempt = 0
+
+        while True:
+            try:
+                playlist_item_body = {
+                    'snippet': {
+                        'playlistId': playlist_id,
+                        'position': i,  # Maintain order
+                        'resourceId': {
+                            'kind': 'youtube#video',
+                            'videoId': video_id
+                        }
                     }
                 }
-            }
 
-            youtube_service.playlistItems().insert(
-                part='snippet',
-                body=playlist_item_body
-            ).execute()
+                youtube_service.playlistItems().insert(
+                    part='snippet',
+                    body=playlist_item_body
+                ).execute()
 
-            added_count += 1
-            print(f"Added video {video_id} to playlist (position {i+1})")
+                added_count += 1
+                print(f"Added video {video_id} to playlist (position {i+1})")
+                break
 
-        except HttpError as e:
-            error_details = {
-                'video_id': video_id,
-                'position': i + 1,
-                'error': str(e)
-            }
-            failed_videos.append(error_details)
-            print(f"Error adding video {video_id}: {str(e)}")
-            continue
-        except Exception as e:
-            error_details = {
-                'video_id': video_id,
-                'position': i + 1,
-                'error': f'Unexpected error: {str(e)}'
-            }
-            failed_videos.append(error_details)
-            print(f"Unexpected error adding video {video_id}: {str(e)}")
-            continue
+            except HttpError as e:
+                status = getattr(e.resp, 'status', None)
+                reason = extract_youtube_error_reason(e)
+                attempt += 1
+                retryable = is_retryable_youtube_error(status, reason)
+
+                if attempt > max_retries or not retryable:
+                    error_details = {
+                        'video_id': video_id,
+                        'position': i + 1,
+                        'error': str(e),
+                        'status': status,
+                        'reason': reason,
+                        'attempts': attempt
+                    }
+                    failed_videos.append(error_details)
+                    print(f"Error adding video {video_id}: {str(e)} (status={status}, reason={reason}, attempts={attempt})")
+                    break
+
+                sleep_time = min(max_sleep, base_sleep * (2 ** (attempt - 1)))
+                sleep_time += random.uniform(0, 0.5)  # jitter
+                print(f"Retrying video {video_id} (attempt {attempt}/{max_retries}) after {sleep_time:.2f}s due to {status} / {reason}")
+                time.sleep(sleep_time)
+                continue
+
+            except Exception as e:
+                attempt += 1
+                if attempt > max_retries:
+                    error_details = {
+                        'video_id': video_id,
+                        'position': i + 1,
+                        'error': f'Unexpected error: {str(e)}',
+                        'attempts': attempt
+                    }
+                    failed_videos.append(error_details)
+                    print(f"Unexpected error adding video {video_id}: {str(e)} (attempts={attempt})")
+                    break
+
+                sleep_time = min(max_sleep, base_sleep * (2 ** (attempt - 1)))
+                sleep_time += random.uniform(0, 0.5)
+                print(f"Retrying video {video_id} after unexpected error (attempt {attempt}/{max_retries}) in {sleep_time:.2f}s: {str(e)}")
+                time.sleep(sleep_time)
+                continue
 
     return added_count, failed_videos
+
+def extract_youtube_error_reason(error):
+    """Best-effort extraction of reason string from HttpError"""
+    try:
+        if hasattr(error, 'content') and error.content:
+            content = error.content
+            if isinstance(content, bytes):
+                content = content.decode('utf-8', errors='ignore')
+            data = json.loads(content)
+            errors = data.get('error', {}).get('errors', [])
+            if errors and isinstance(errors, list):
+                return errors[0].get('reason')
+    except Exception:
+        pass
+    return None
+
+def is_retryable_youtube_error(status, reason):
+    """Identify transient errors that should be retried"""
+    retryable_statuses = {409, 429, 500, 502, 503, 504}
+    retryable_reasons = {
+        'quotaExceeded',
+        'userRateLimitExceeded',
+        'rateLimitExceeded',
+        'backendError',
+        'internalError',
+        'serviceUnavailable',
+        'SERVICE_UNAVAILABLE',
+        'playlistItemAlreadyExists',
+    }
+
+    if status in retryable_statuses:
+        return True
+
+    if reason and reason in retryable_reasons:
+        return True
+
+    return False
 
 def download_playlist_from_s3(bucket_name, object_key):
     """Download and parse playlist data from S3"""
