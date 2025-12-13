@@ -23,6 +23,20 @@ def to_serializable(value):
         return [to_serializable(item) for item in value]
     return value
 
+
+def derive_playlist_name_from_s3_key(s3_key):
+    """Return a human-friendly playlist name based on the S3 prefix."""
+    if not s3_key:
+        return f"Playlist created on {datetime.utcnow().strftime('%Y-%m-%d')}"
+
+    prefix = s3_key.split("/", 1)[0].lower()
+    if prefix == "beatport":
+        return "Beatport Top 100"
+    if prefix == "clubtone":
+        return "Clubtone Top 100"
+
+    return f"{prefix.title()} Playlist"
+
 def lambda_handler(event, context):
     """
     Create a public YouTube playlist from S3 playlist data with enriched video IDs from DynamoDB
@@ -101,8 +115,9 @@ def handle_job_completed_event(event):
         print(f"Creating playlist for completed job {job_id} from s3://{s3_bucket}/{s3_key}")
 
         # Create playlist name based on source file and job completion
-        playlist_name = f"Beatport Top 100 ({datetime.utcnow().strftime('%Y-%m-%d')})"
-        description = f"Automatically created playlist from job {job_id} completed on {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}. Source: {s3_key}"
+        base_name = event.get('playlist_name') or derive_playlist_name_from_s3_key(s3_key)
+        playlist_name = f"{base_name} ({datetime.utcnow().strftime('%Y-%m-%d')})"
+        description = event.get('description') or f"Automatically created playlist from job {job_id} completed on {datetime.utcnow().strftime('%Y-%m-%d %H:%M')}. Source: {s3_key}"
 
         # Use the same S3-based playlist creation logic
         modified_event = {
