@@ -13,53 +13,23 @@ def lambda_handler(event, context):
     Lambda function to scrape Beatport's top-100 tracks
     """
     try:
-        # Fetch the page from Beatport
         print("Fetching Beatport top-100 page...")
+        html = fetch_chart_html("https://www.beatport.com/top-100")
 
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-            'Accept-Language': 'en-US,en;q=0.5',
-            'Accept-Encoding': 'gzip, deflate',
-            'Connection': 'keep-alive',
-        }
+        if not html:
+            return {
+                "statusCode": 500,
+                "body": "Failed to fetch Beatport top-100 page"
+            }
 
-        response = requests.get('https://www.beatport.com/top-100', headers=headers, timeout=30)
-        response.raise_for_status()
+        tracks = extract_tracks(html)
+        print(f"Successfully extracted {len(tracks)} valid tracks")
 
-
-        # Parse the HTML
-        soup = BeautifulSoup(response.text, 'html.parser')
-
-        # Find all track rows using the working approach
-        track_elements = soup.find_all('div', {'data-testid': 'tracks-table-row'})
-        print(f"Found {len(track_elements)} track elements")
-
-        if not track_elements:
+        if not tracks:
             return {
                 "statusCode": 500,
                 "body": "No track elements found with data-testid='tracks-table-row'"
             }
-
-        tracks = []
-
-        # Process all tracks
-        for idx, element in enumerate(track_elements, 1):
-            try:
-                track_data = extract_track_data_simple(element, idx)
-
-                # Validate the track
-                if track_data.get('title') and track_data.get('artist'):
-                    tracks.append(track_data)
-                    print(f"Valid track {len(tracks)}: {track_data['title']} - {track_data['artist']}")
-                else:
-                    print(f"Skipping invalid track {idx} - missing title or artist")
-
-            except Exception as e:
-                print(f"Error processing track {idx}: {e}")
-                continue
-
-        print(f"Successfully extracted {len(tracks)} valid tracks")
 
         # Create playlist data for S3 storage
         now = datetime.now(timezone.utc)
@@ -109,6 +79,53 @@ def lambda_handler(event, context):
             "statusCode": 500,
             "body": f"Scraping error: {str(e)}"
         }
+
+
+def fetch_chart_html(url):
+    """Fetch the chart page HTML."""
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'en-US,en;q=0.5',
+        'Accept-Encoding': 'gzip, deflate',
+        'Connection': 'keep-alive',
+    }
+
+    try:
+        response = requests.get(url, headers=headers, timeout=30)
+        response.raise_for_status()
+        return response.text
+    except Exception as e:
+        print(f"Error fetching Beatport page: {e}")
+        return None
+
+
+def extract_tracks(html, limit=None):
+    """Parse track data from the Beatport chart HTML."""
+    soup = BeautifulSoup(html, 'html.parser')
+    track_elements = soup.find_all('div', {'data-testid': 'tracks-table-row'})
+    if limit:
+        track_elements = track_elements[:limit]
+
+    print(f"Found {len(track_elements)} track elements")
+
+    tracks = []
+    for idx, element in enumerate(track_elements, 1):
+        try:
+            track_data = extract_track_data_simple(element, idx)
+
+            # Validate the track
+            if track_data.get('title') and track_data.get('artist'):
+                tracks.append(track_data)
+                print(f"Valid track {len(tracks)}: {track_data['title']} - {track_data['artist']}")
+            else:
+                print(f"Skipping invalid track {idx} - missing title or artist")
+
+        except Exception as e:
+            print(f"Error processing track {idx}: {e}")
+            continue
+
+    return tracks
 
 def extract_track_data_simple(element, position):
     """Extract track data from a tracks-table-row element"""
