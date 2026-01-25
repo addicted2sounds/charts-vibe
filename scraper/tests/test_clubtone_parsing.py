@@ -1,8 +1,5 @@
-import clubtone
-
-
-def test_clubtone_fixture_parsing(clubtone_html):
-    tracks = clubtone.extract_tracks(clubtone_html, limit=5)
+def test_clubtone_fixture_parsing(clubtone_html, clubtone_module):
+    tracks = clubtone_module.extract_tracks(clubtone_html, limit=5)
 
     assert len(tracks) == 5
 

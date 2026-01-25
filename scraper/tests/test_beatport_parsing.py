@@ -1,8 +1,5 @@
-import beatport
-
-
-def test_beatport_fixture_parsing(beatport_html):
-    tracks = beatport.extract_tracks(beatport_html, limit=5)
+def test_beatport_fixture_parsing(beatport_html, beatport_module):
+    tracks = beatport_module.extract_tracks(beatport_html, limit=5)
 
     assert len(tracks) == 5
 
