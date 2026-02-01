@@ -52,11 +52,23 @@ Parameters:
     Default: 'cron(0 6 28-31 * ? *)'
     Description: 'EventBridge schedule expression for Clubtone scraper (UTC). Default: 06:00 UTC on the last days of each month'
 
+  EnablePlaylistResumeSchedule:
+    Type: String
+    Default: 'true'
+    AllowedValues: ['true', 'false']
+    Description: 'Enable daily EventBridge trigger for playlist resume processing'
+
+  PlaylistResumeScheduleExpression:
+    Type: String
+    Default: 'cron(0 5 * * ? *)'
+    Description: 'EventBridge schedule expression for playlist resume (UTC). Default: daily at 05:00 UTC'
+
 Conditions:
   IsProduction: !Equals [!Ref Environment, 'production']
   ShouldCreateTables: !Equals [!Ref CreateTables, 'true']
   EnableBeatportSchedule: !Equals [!Ref EnableBeatportScrapeSchedule, 'true']
   EnableClubtoneSchedule: !Equals [!Ref EnableClubtoneScrapeSchedule, 'true']
+  EnablePlaylistResumeScheduleCondition: !Equals [!Ref EnablePlaylistResumeSchedule, 'true']
 
 Globals:
   Function:
@@ -109,6 +121,12 @@ Resources:
     Type: AWS::Logs::LogGroup
     Properties:
       LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-YoutubePlaylistFunction"
+      RetentionInDays: 14
+
+  PlaylistResumeFunctionLogGroup:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub "/aws/lambda/${AWS::StackName}-PlaylistResumeFunction"
       RetentionInDays: 14
 
   ChartProcessorFunctionLogGroup:
@@ -469,6 +487,36 @@ Resources:
               detail-type:
                 - "Job Completed"
     DependsOn: YoutubePlaylistFunctionLogGroup
+
+  PlaylistResumeFunction:
+    Type: AWS::Serverless::Function
+    Properties:
+      FunctionName: !Sub "${AWS::StackName}-PlaylistResumeFunction"
+      CodeUri: ytplaylist_resumer
+      Handler: app.lambda_handler
+      Runtime: python3.11
+      Timeout: 300
+      Policies:
+        - DynamoDBReadPolicy:
+            TableName: !If
+              - ShouldCreateTables
+              - !Ref PlaylistsTable
+              - !Ref ExistingPlaylistsTableName
+        - LambdaInvokePolicy:
+            FunctionName: !Ref YoutubePlaylistFunction
+      Environment:
+        Variables:
+          PLAYLIST_FUNCTION_NAME: !Ref YoutubePlaylistFunction
+          RESUME_BATCH_LIMIT: 5
+      Events:
+        DailyResume:
+          Type: Schedule
+          Properties:
+            Name: !Sub "${AWS::StackName}-playlist-resume-daily"
+            Description: 'Daily resume pass for rate-limited playlists'
+            Schedule: !Ref PlaylistResumeScheduleExpression
+            Enabled: !If [EnablePlaylistResumeScheduleCondition, true, false]
+    DependsOn: PlaylistResumeFunctionLogGroup
 
   # Dead Letter Queue for playlist processing failures
   PlaylistProcessingDLQ:

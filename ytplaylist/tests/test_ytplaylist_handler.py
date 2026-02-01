@@ -18,7 +18,13 @@ def test_handle_direct_video_ids_validation(ytplaylist_app):
 def test_handle_direct_video_ids_success(ytplaylist_app, monkeypatch):
     monkeypatch.setattr(ytplaylist_app, "get_youtube_service", lambda: object())
     monkeypatch.setattr(ytplaylist_app, "create_public_playlist", lambda service, title, description: "pl123")
-    monkeypatch.setattr(ytplaylist_app, "add_videos_to_playlist", lambda service, playlist_id, video_ids: (len(video_ids), []))
+    monkeypatch.setattr(ytplaylist_app, "put_playlist_record", lambda record: True)
+    monkeypatch.setattr(ytplaylist_app, "update_playlist_record", lambda *args, **kwargs: None)
+    monkeypatch.setattr(
+        ytplaylist_app,
+        "add_videos_to_playlist",
+        lambda service, playlist_id, video_ids: (len(video_ids), [], None)
+    )
 
     event = {
         "playlist_name": "My Playlist",

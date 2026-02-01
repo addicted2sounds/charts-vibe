@@ -7,12 +7,181 @@ import random
 from datetime import datetime
 import uuid
 from decimal import Decimal
+from botocore.exceptions import ClientError
 from google.oauth2.credentials import Credentials
 from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
 from ssm_credentials import SSMCredentialsManager
+
+RATE_LIMIT_REASONS = {
+    'quotaExceeded',
+    'dailyLimitExceeded',
+    'userRateLimitExceeded',
+    'rateLimitExceeded'
+}
+
+RATE_LIMIT_STATUSES = {429}
+
+
+class RateLimitError(Exception):
+    """Raised when the YouTube API signals a rate limit/quota error."""
+    def __init__(self, message, status=None, reason=None):
+        super().__init__(message)
+        self.status = status
+        self.reason = reason
+
+
+def is_rate_limit_error(status, reason):
+    """Return True when the error indicates a rate limit/quota issue."""
+    if status in RATE_LIMIT_STATUSES:
+        return True
+    if reason and reason in RATE_LIMIT_REASONS:
+        return True
+    return False
+
+
+def get_playlists_table():
+    """Return the DynamoDB playlists table."""
+    dynamodb = boto3.resource('dynamodb')
+    table_name = os.environ.get('PLAYLISTS_TABLE', 'charts-vibe-playlists')
+    return dynamodb.Table(table_name)
+
+
+def build_playlist_record(
+    playlist_id,
+    playlist_name,
+    description,
+    status,
+    source_type,
+    created_at,
+    s3_bucket=None,
+    s3_key=None,
+    job_id=None,
+    source_playlist_id=None,
+    total_tracks=None,
+    tracks_with_video_ids=None
+):
+    record = {
+        'playlist_id': playlist_id,
+        'created_at': created_at,
+        'status': status,
+        'playlist_name': playlist_name,
+        'description': description,
+        'source_type': source_type
+    }
+
+    if s3_bucket:
+        record['s3_bucket'] = s3_bucket
+    if s3_key:
+        record['s3_key'] = s3_key
+    if job_id:
+        record['job_id'] = job_id
+    if source_playlist_id:
+        record['source_playlist_id'] = source_playlist_id
+    if total_tracks is not None:
+        record['total_tracks'] = total_tracks
+    if tracks_with_video_ids is not None:
+        record['tracks_with_video_ids'] = tracks_with_video_ids
+
+    record['videos_added'] = 0
+    return record
+
+
+def put_playlist_record(record):
+    """Create a playlist record if it does not already exist."""
+    try:
+        table = get_playlists_table()
+        table.put_item(
+            Item=record,
+            ConditionExpression='attribute_not_exists(playlist_id)'
+        )
+        return True
+    except ClientError as e:
+        if e.response.get('Error', {}).get('Code') == 'ConditionalCheckFailedException':
+            print(f"Playlist record already exists for {record.get('playlist_id')}")
+            return False
+        raise
+
+
+def update_playlist_record(
+    playlist_id,
+    status,
+    added_videos=0,
+    failed_videos=None,
+    resume_from=None,
+    last_error=None,
+    last_error_reason=None,
+    last_error_status=None,
+    completed_at=None,
+    rate_limited_at=None
+):
+    """Update playlist record with minimal writes."""
+    table = get_playlists_table()
+    now = datetime.utcnow().isoformat()
+    failed_videos = failed_videos or []
+
+    expression_values = {
+        ':status': status,
+        ':updated_at': now,
+        ':added_inc': int(added_videos),
+        ':failed_count': len(failed_videos)
+    }
+    expression_names = {
+        '#status': 'status'
+    }
+
+    set_parts = [
+        '#status = :status',
+        'updated_at = :updated_at',
+        'failed_videos_count = :failed_count'
+    ]
+
+    if failed_videos:
+        expression_values[':failed_sample'] = failed_videos[:10]
+        set_parts.append('failed_videos_sample = :failed_sample')
+
+    if resume_from is not None:
+        expression_values[':resume_from'] = int(resume_from)
+        set_parts.append('resume_from = :resume_from')
+
+    if last_error:
+        expression_values[':last_error'] = str(last_error)
+        set_parts.append('last_error = :last_error')
+
+    if last_error_reason:
+        expression_values[':last_error_reason'] = str(last_error_reason)
+        set_parts.append('last_error_reason = :last_error_reason')
+
+    if last_error_status is not None:
+        expression_values[':last_error_status'] = int(last_error_status)
+        set_parts.append('last_error_status = :last_error_status')
+
+    if completed_at:
+        expression_values[':completed_at'] = completed_at
+        set_parts.append('completed_at = :completed_at')
+
+    if rate_limited_at:
+        expression_values[':rate_limited_at'] = rate_limited_at
+        set_parts.append('rate_limited_at = :rate_limited_at')
+
+    update_expression = f"SET {', '.join(set_parts)} ADD videos_added :added_inc"
+
+    table.update_item(
+        Key={'playlist_id': playlist_id},
+        UpdateExpression=update_expression,
+        ExpressionAttributeNames=expression_names,
+        ExpressionAttributeValues=expression_values
+    )
+
+
+def safe_update_playlist_record(**kwargs):
+    """Update playlist record but don't fail the playlist flow if storage is unavailable."""
+    try:
+        update_playlist_record(**kwargs)
+    except Exception as e:
+        print(f"Error updating playlist record: {str(e)}")
 
 
 def to_serializable(value):
@@ -71,6 +240,14 @@ def lambda_handler(event, context):
         "playlist_name": "My Public Playlist",
         "video_ids": ["video_id_1", "video_id_2", "video_id_3"],
         "description": "Optional description"
+    }
+
+    4. Resume existing playlist creation:
+    {
+        "s3_bucket": "charts-vibe-playlists",
+        "s3_key": "beatport/2025/10/27/top100-060056.json",
+        "playlist_id": "PLxxxxxxxxxxxxxxxxxxxxxxx",
+        "resume_from": 25
     }
     """
     try:
@@ -167,11 +344,18 @@ def handle_direct_video_ids(event):
         }
 
     # Create public playlist
-    playlist_id = create_public_playlist(
-        youtube_service,
-        playlist_name,
-        description
-    )
+    try:
+        playlist_id = create_public_playlist(
+            youtube_service,
+            playlist_name,
+            description
+        )
+    except RateLimitError as e:
+        print(f"Rate limit while creating playlist: {str(e)}")
+        return {
+            'statusCode': 429,
+            'body': json.dumps({'error': 'Rate limit exceeded while creating playlist'})
+        }
 
     if not playlist_id:
         return {
@@ -179,10 +363,66 @@ def handle_direct_video_ids(event):
             'body': json.dumps({'error': 'Failed to create playlist'})
         }
 
-    # Add videos to playlist
-    added_videos, failed_videos = add_videos_to_playlist(youtube_service, playlist_id, video_ids)
+    created_at = datetime.utcnow().isoformat()
+    record = build_playlist_record(
+        playlist_id=playlist_id,
+        playlist_name=playlist_name,
+        description=description,
+        status='in_progress',
+        source_type='direct_video_ids',
+        created_at=created_at,
+        total_tracks=len(video_ids),
+        tracks_with_video_ids=len(video_ids)
+    )
+    try:
+        put_playlist_record(record)
+    except Exception as e:
+        print(f"Error writing playlist record: {str(e)}")
 
-    # Return playlist URLs without saving anything
+    # Add videos to playlist
+    added_videos, failed_videos, stop_info = add_videos_to_playlist(
+        youtube_service,
+        playlist_id,
+        video_ids
+    )
+
+    if stop_info and stop_info.get('reason') == 'rate_limited':
+        safe_update_playlist_record(
+            playlist_id=playlist_id,
+            status='rate_limited',
+            added_videos=added_videos,
+            failed_videos=failed_videos,
+            resume_from=stop_info.get('next_index'),
+            last_error=stop_info.get('error'),
+            last_error_reason=stop_info.get('error_reason'),
+            last_error_status=stop_info.get('status'),
+            rate_limited_at=datetime.utcnow().isoformat()
+        )
+        return {
+            'statusCode': 429,
+            'body': json.dumps({
+                'success': False,
+                'rate_limited': True,
+                'playlist_id': playlist_id,
+                'playlist_url': f'https://www.youtube.com/playlist?list={playlist_id}',
+                'music_url': f'https://music.youtube.com/playlist?list={playlist_id}',
+                'playlist_name': playlist_name,
+                'total_videos_requested': len(video_ids),
+                'videos_added_successfully': added_videos,
+                'resume_from': stop_info.get('next_index'),
+                'failed_videos': failed_videos
+            })
+        }
+
+    safe_update_playlist_record(
+        playlist_id=playlist_id,
+        status='completed',
+        added_videos=added_videos,
+        failed_videos=failed_videos,
+        completed_at=datetime.utcnow().isoformat()
+    )
+
+    # Return playlist URLs and summary
     return {
         'statusCode': 200,
         'body': json.dumps({
@@ -237,6 +477,17 @@ def handle_s3_playlist_creation(event, s3_bucket, s3_key):
 
         print(f"Found {len(video_ids)} tracks with YouTube video IDs")
 
+        resume_from_raw = event.get('resume_from')
+        try:
+            resume_from = int(resume_from_raw) if resume_from_raw is not None else 0
+        except (TypeError, ValueError):
+            resume_from = 0
+        if resume_from < 0:
+            resume_from = 0
+
+        resume_requested = resume_from_raw is not None or event.get('resume') is True
+        existing_playlist_id = event.get('playlist_id') if resume_requested else None
+
         # Get YouTube service
         youtube_service = get_youtube_service()
         if not youtube_service:
@@ -245,21 +496,119 @@ def handle_s3_playlist_creation(event, s3_bucket, s3_key):
                 'body': json.dumps({'error': 'Failed to authenticate with YouTube'})
             }
 
-        # Create public playlist
-        playlist_id = create_public_playlist(
-            youtube_service,
-            playlist_name,
-            description
-        )
-
-        if not playlist_id:
+        if resume_from >= len(video_ids):
+            if existing_playlist_id:
+                safe_update_playlist_record(
+                    playlist_id=existing_playlist_id,
+                    status='completed',
+                    added_videos=0,
+                    failed_videos=[],
+                    completed_at=datetime.utcnow().isoformat()
+                )
             return {
-                'statusCode': 500,
-                'body': json.dumps({'error': 'Failed to create playlist'})
+                'statusCode': 200,
+                'body': json.dumps({
+                    'success': True,
+                    'playlist_id': existing_playlist_id,
+                    'playlist_name': playlist_name,
+                    'message': 'Playlist already complete',
+                    'total_tracks_in_source': len(tracks),
+                    'tracks_with_video_ids': len(video_ids),
+                    'skipped_tracks': skipped_tracks
+                })
             }
 
+        if existing_playlist_id:
+            playlist_id = existing_playlist_id
+            print(f"Resuming playlist {playlist_id} from index {resume_from}")
+        else:
+            # Create public playlist
+            try:
+                playlist_id = create_public_playlist(
+                    youtube_service,
+                    playlist_name,
+                    description
+                )
+            except RateLimitError as e:
+                print(f"Rate limit while creating playlist: {str(e)}")
+                return {
+                    'statusCode': 429,
+                    'body': json.dumps({'error': 'Rate limit exceeded while creating playlist'})
+                }
+
+            if not playlist_id:
+                return {
+                    'statusCode': 500,
+                    'body': json.dumps({'error': 'Failed to create playlist'})
+                }
+
+        created_at = datetime.utcnow().isoformat()
+        record = build_playlist_record(
+            playlist_id=playlist_id,
+            playlist_name=playlist_name,
+            description=description,
+            status='in_progress',
+            source_type='s3',
+            created_at=created_at,
+            s3_bucket=s3_bucket,
+            s3_key=s3_key,
+            job_id=event.get('job_id'),
+            source_playlist_id=playlist_data.get('playlist_id'),
+            total_tracks=len(tracks),
+            tracks_with_video_ids=len(video_ids)
+        )
+        try:
+            put_playlist_record(record)
+        except Exception as e:
+            print(f"Error writing playlist record: {str(e)}")
+
         # Add videos to playlist
-        added_videos, failed_videos = add_videos_to_playlist(youtube_service, playlist_id, video_ids)
+        added_videos, failed_videos, stop_info = add_videos_to_playlist(
+            youtube_service,
+            playlist_id,
+            video_ids,
+            start_index=resume_from
+        )
+
+        if stop_info and stop_info.get('reason') == 'rate_limited':
+            safe_update_playlist_record(
+                playlist_id=playlist_id,
+                status='rate_limited',
+                added_videos=added_videos,
+                failed_videos=failed_videos,
+                resume_from=stop_info.get('next_index'),
+                last_error=stop_info.get('error'),
+                last_error_reason=stop_info.get('error_reason'),
+                last_error_status=stop_info.get('status'),
+                rate_limited_at=datetime.utcnow().isoformat()
+            )
+            return {
+                'statusCode': 429,
+                'body': json.dumps({
+                    'success': False,
+                    'rate_limited': True,
+                    'playlist_id': playlist_id,
+                    'playlist_url': f'https://www.youtube.com/playlist?list={playlist_id}',
+                    'music_url': f'https://music.youtube.com/playlist?list={playlist_id}',
+                    'playlist_name': playlist_name,
+                    'job_id': event.get('job_id'),
+                    's3_source': f's3://{s3_bucket}/{s3_key}',
+                    'total_tracks_in_source': len(tracks),
+                    'tracks_with_video_ids': len(video_ids),
+                    'videos_added_successfully': added_videos,
+                    'resume_from': stop_info.get('next_index'),
+                    'failed_videos': failed_videos,
+                    'skipped_tracks': skipped_tracks
+                })
+            }
+
+        safe_update_playlist_record(
+            playlist_id=playlist_id,
+            status='completed',
+            added_videos=added_videos,
+            failed_videos=failed_videos,
+            completed_at=datetime.utcnow().isoformat()
+        )
 
         # Return detailed results
         return {
@@ -482,21 +831,32 @@ def create_public_playlist(youtube_service, title, description):
         return playlist_id
 
     except HttpError as e:
+        status = getattr(e.resp, 'status', None)
+        reason = extract_youtube_error_reason(e)
+        if is_rate_limit_error(status, reason):
+            raise RateLimitError("YouTube API rate limit while creating playlist", status=status, reason=reason)
         print(f"YouTube API error creating playlist: {str(e)}")
         return None
     except Exception as e:
         print(f"Error creating playlist: {str(e)}")
         return None
 
-def add_videos_to_playlist(youtube_service, playlist_id, video_ids):
+def add_videos_to_playlist(youtube_service, playlist_id, video_ids, start_index=0, stop_on_rate_limit=True):
     """Add videos to YouTube playlist with retries for transient API failures"""
     added_count = 0
     failed_videos = []
+    stop_info = None
     max_retries = int(os.environ.get('YT_PLAYLIST_MAX_RETRIES', '5'))
     base_sleep = float(os.environ.get('YT_PLAYLIST_RETRY_BASE_SECONDS', '1'))
     max_sleep = float(os.environ.get('YT_PLAYLIST_RETRY_MAX_SECONDS', '10'))
 
-    for i, video_id in enumerate(video_ids):
+    if start_index < 0:
+        start_index = 0
+    if start_index > len(video_ids):
+        start_index = len(video_ids)
+
+    for i in range(start_index, len(video_ids)):
+        video_id = video_ids[i]
         attempt = 0
 
         while True:
@@ -525,6 +885,29 @@ def add_videos_to_playlist(youtube_service, playlist_id, video_ids):
                 status = getattr(e.resp, 'status', None)
                 reason = extract_youtube_error_reason(e)
                 attempt += 1
+
+                if stop_on_rate_limit and is_rate_limit_error(status, reason):
+                    error_details = {
+                        'video_id': video_id,
+                        'position': i + 1,
+                        'error': str(e),
+                        'status': status,
+                        'reason': reason,
+                        'attempts': attempt,
+                        'rate_limited': True
+                    }
+                    failed_videos.append(error_details)
+                    stop_info = {
+                        'reason': 'rate_limited',
+                        'status': status,
+                        'error_reason': reason,
+                        'error': str(e),
+                        'video_id': video_id,
+                        'next_index': i
+                    }
+                    print(f"Rate limit hit while adding video {video_id}: {str(e)} (status={status}, reason={reason})")
+                    return added_count, failed_videos, stop_info
+
                 retryable = is_retryable_youtube_error(status, reason)
 
                 if attempt > max_retries or not retryable:
@@ -565,7 +948,7 @@ def add_videos_to_playlist(youtube_service, playlist_id, video_ids):
                 time.sleep(sleep_time)
                 continue
 
-    return added_count, failed_videos
+    return added_count, failed_videos, stop_info
 
 def extract_youtube_error_reason(error):
     """Best-effort extraction of reason string from HttpError"""
@@ -584,11 +967,8 @@ def extract_youtube_error_reason(error):
 
 def is_retryable_youtube_error(status, reason):
     """Identify transient errors that should be retried"""
-    retryable_statuses = {409, 429, 500, 502, 503, 504}
+    retryable_statuses = {409, 500, 502, 503, 504}
     retryable_reasons = {
-        'quotaExceeded',
-        'userRateLimitExceeded',
-        'rateLimitExceeded',
         'backendError',
         'internalError',
         'serviceUnavailable',
