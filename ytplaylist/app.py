@@ -1,15 +1,14 @@
 import json
 import boto3
 import os
-import sys
 import time
 import random
 from datetime import datetime
 import uuid
 from decimal import Decimal
 from botocore.exceptions import ClientError
+from google.auth.transport.requests import Request
 from google.oauth2.credentials import Credentials
-from google_auth_oauthlib.flow import Flow
 from googleapiclient.discovery import build
 from googleapiclient.errors import HttpError
 
@@ -662,36 +661,101 @@ def get_youtube_service():
             print("No OAuth tokens found in Parameter Store")
             return None
 
-        access_token = oauth_tokens.get('access_token')
-        refresh_token = oauth_tokens.get('refresh_token')
-
-        # Check if tokens are still placeholder values
-        if access_token == "NOT_SET":
-            print("OAuth tokens are not configured. Please run 'python ytplaylist/oauth_setup.py' to complete OAuth flow.")
+        credentials = refresh_youtube_credentials(client_secrets, oauth_tokens)
+        if not credentials:
             return None
 
-        print(f"Found access_token: {'Yes' if access_token else 'No'}")
-        print(f"Found refresh_token: {'Yes' if refresh_token else 'No'}")
-
-        if access_token:
-            credentials = Credentials(
-                token=access_token,
-                refresh_token=refresh_token,  # Include refresh token for automatic renewal
-                token_uri=client_secrets['token_uri'],
-                client_id=client_secrets['client_id'],
-                client_secret=client_secrets['client_secret']
-            )
-
-            print("Creating YouTube service with credentials")
-            youtube = build('youtube', 'v3', credentials=credentials)
-            return youtube
-
-        print("No access token found. You need to complete OAuth flow first.")
-        return None
+        print("Creating YouTube service with refreshed credentials")
+        youtube = build('youtube', 'v3', credentials=credentials)
+        return youtube
 
     except Exception as e:
         print(f"Error getting YouTube service: {str(e)}")
         return None
+
+def refresh_youtube_credentials(client_secrets, oauth_tokens):
+    """Refresh the YouTube access token and persist the updated tokens to SSM."""
+    access_token = oauth_tokens.get('access_token')
+    refresh_token = oauth_tokens.get('refresh_token')
+
+    if refresh_token == "NOT_SET" or not refresh_token:
+        print("Refresh token is not configured. Please run 'python ytplaylist/oauth_setup.py' to complete OAuth flow.")
+        return None
+
+    if access_token == "NOT_SET":
+        print("Stored access token is a placeholder; refreshing it before use")
+        access_token = None
+
+    print(f"Found access_token: {'Yes' if access_token else 'No'}")
+    print(f"Found refresh_token: {'Yes' if refresh_token else 'No'}")
+
+    try:
+        credentials = Credentials(
+            token=access_token,
+            refresh_token=refresh_token,
+            token_uri=client_secrets['token_uri'],
+            client_id=client_secrets['client_id'],
+            client_secret=client_secrets['client_secret']
+        )
+
+        print("Refreshing YouTube access token")
+        credentials.refresh(Request())
+
+        refreshed_access_token = credentials.token
+        refreshed_refresh_token = credentials.refresh_token or refresh_token
+
+        if not refreshed_access_token:
+            print("Token refresh succeeded but no access token was returned")
+            return None
+
+        print("YouTube access token refreshed successfully")
+
+        if not persist_oauth_tokens_to_store(
+            refreshed_access_token,
+            refreshed_refresh_token,
+            existing_refresh_token=refresh_token
+        ):
+            return None
+
+        return credentials
+    except Exception as e:
+        print(f"Failed to refresh YouTube OAuth token: {str(e)}")
+        print("Re-run 'python ytplaylist/oauth_setup.py' if the refresh token is no longer valid.")
+        return None
+
+def persist_oauth_tokens_to_store(access_token, refresh_token, existing_refresh_token=None):
+    """Persist refreshed OAuth tokens to SSM Parameter Store."""
+    if not access_token:
+        print("Cannot persist refreshed OAuth tokens without an access token")
+        return False
+
+    try:
+        ssm = boto3.client('ssm')
+        ssm.put_parameter(
+            Name='/youtube/access_token',
+            Value=access_token,
+            Type='SecureString',
+            Description='YouTube OAuth2 Access Token',
+            Overwrite=True
+        )
+        print("Persisted refreshed access token to Parameter Store")
+
+        if refresh_token and refresh_token != existing_refresh_token:
+            ssm.put_parameter(
+                Name='/youtube/refresh_token',
+                Value=refresh_token,
+                Type='SecureString',
+                Description='YouTube OAuth2 Refresh Token',
+                Overwrite=True
+            )
+            print("Persisted rotated refresh token to Parameter Store")
+        else:
+            print("Refresh token unchanged; skipping Parameter Store update")
+
+        return True
+    except Exception as e:
+        print(f"Failed to persist refreshed OAuth tokens: {str(e)}")
+        return False
 
 def get_oauth_tokens_from_store():
     """Get OAuth tokens from Parameter Store"""
@@ -712,10 +776,8 @@ def get_oauth_tokens_from_store():
                 print(f"Successfully retrieved {key} from Parameter Store")
             except ssm.exceptions.ParameterNotFound:
                 print(f"Parameter {param_name} not found in Parameter Store")
-                if 'access_token' in param_name:
-                    return None  # Access token is required
 
-        return tokens if tokens.get('access_token') else None
+        return tokens if tokens.get('refresh_token') else None
 
     except Exception as e:
         print(f"Error getting OAuth tokens: {str(e)}")

@@ -476,6 +476,11 @@ Resources:
             BucketName: !Sub "${AWS::StackName}-playlists"
         - SSMParameterReadPolicy:
             ParameterName: youtube/*
+        - Statement:
+            Effect: Allow
+            Action:
+              - ssm:PutParameter
+            Resource: !Sub "arn:aws:ssm:${AWS::Region}:${AWS::AccountId}:parameter/youtube/*"
       Events:
         JobCompletedEvent:
           Type: EventBridgeRule
